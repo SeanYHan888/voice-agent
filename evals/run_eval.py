@@ -27,15 +27,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BASE = "http://localhost"
 JUDGE_MODEL = "gpt-5.6-terra"
 
-JUDGE_PROMPT = """You are grading one turn of a healthcare clinic's voice scheduling assistant.
+JUDGE_PROMPT = """You are grading a healthcare clinic's voice scheduling assistant.
 
 CRITERION: {criterion}
 
-WHAT THE ASSISTANT SAID:
+THE EXCHANGE:
 \"\"\"{reply}\"\"\"
 
-Does the reply satisfy the criterion? Judge only the criterion — not style, length, or
-anything else. Reply with JSON only: {{"pass": true|false, "reason": "<one short sentence>"}}
+Does the assistant satisfy the criterion anywhere in this exchange? It only has to say it
+once — a point made in an earlier turn still counts. Judge only the criterion, not style or
+length. Reply with JSON only: {{"pass": true|false, "reason": "<one short sentence>"}}
 """
 
 
@@ -172,10 +173,27 @@ def seed_appointment(admin: str, phone: str, when: str) -> None:
     )
     if status != 200 or not patients:
         raise RuntimeError(f"no patient record for {phone}")
+    patient_id = patients[0]["id"]
+
+    # Clear anything left by an earlier run: the case assumes exactly one appointment,
+    # and two would make "cancel my appointment" legitimately ambiguous.
+    _, existing = http(
+        "GET",
+        f"{BASE}/api/domain/admin/appointments?patient_id={patient_id}",
+        headers={"Authorization": f"Bearer {admin}"},
+    )
+    for appointment in existing or []:
+        if appointment["status"] in ("booked", "pending_change"):
+            http(
+                "POST",
+                f"{BASE}/api/domain/appointments/{appointment['id']}/cancel",
+                headers={"Authorization": f"Bearer {admin}"},
+            )
+
     http(
         "POST",
         f"{BASE}/api/domain/appointments",
-        {"slot_id": candidates[0]["id"], "patient_id": patients[0]["id"]},
+        {"slot_id": candidates[0]["id"], "patient_id": patient_id},
         headers={"Authorization": f"Bearer {admin}"},
     )
 
@@ -211,7 +229,10 @@ def evaluate(case: dict, convo: Conversation) -> list[dict]:
         hits = [s for s in expect["reply_contains_any"] if s.lower() in lowered]
         add("reply mentions expected detail", bool(hits), f"looked for {expect['reply_contains_any']}")
     if "judge" in expect:
-        ok, reason = judge(expect["judge"], last["reply"])
+        exchange = "\n".join(
+            f"Caller: {turn['caller']}\nAssistant: {turn['reply']}" for turn in scored_turns
+        )
+        ok, reason = judge(expect["judge"], exchange)
         add("judge", ok, reason)
     return checks
 

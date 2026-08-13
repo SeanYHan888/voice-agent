@@ -10,6 +10,12 @@ none of which were visible in manual conversation testing.
 | 2 | 19/28 | Agent: availability, escalation, authority claims, repeat-requests |
 | 3 | 23/28 | **Schema bug** in rescheduling · seeding order · off-topic redirect |
 | 4 | **28/28** | — |
+| later | 26–28/28 | Admin cancellation rule · judge reads the whole exchange · two criteria loosened |
+
+The suite settles at **27–28 of 28**. The one that moves is `register-new-patient`, where
+Maya sometimes confirms the new record explicitly and sometimes goes straight to offering
+times. Both are fine; the variance is the model's, and it is worth stating plainly rather
+than tuning the criterion until the number stops moving.
 
 ## Bugs found in the application
 
@@ -56,6 +62,16 @@ agent:
 - Two criteria were wrong: one demanded Maya mention weekday hours when the caller asked
   specifically about Friday, another demanded a staff-follow-up offer when the case was
   really testing whether she admits ignorance.
+- The judge originally read only the final turn, so a case where Maya explained the
+  24-hour rule correctly in turn one was graded on turn two and failed.
+- One case assumed a caller saying "my *first* appointment" should still be asked to verify
+  against a record that cannot exist. The agent was right and the case was wrong; it now
+  opens as a returning caller so it actually tests the unknown-number branch.
+
+The recurring lesson: **assert on actions, judge only what has to be said.** Every criterion
+that specified phrasing ("says someone will follow up", "confirms the record was created")
+eventually failed on a reply that was perfectly good. The criteria that held were the ones
+about substance — did it refuse, did it admit ignorance, did it call the tool.
 
 ## What the suite covers
 

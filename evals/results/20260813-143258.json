@@ -1,0 +1,140 @@
+{
+  "results": [
+    {
+      "id": "verify-then-book",
+      "category": "normal",
+      "description": "Verified caller books a follow-up",
+      "checks": [
+        {
+          "check": "called book_appointment",
+          "pass": true,
+          "detail": "tools seen: ['find_appointment_times', 'book_appointment']"
+        },
+        {
+          "check": "verified == True",
+          "pass": true,
+          "detail": "actual: True"
+        },
+        {
+          "check": "judge",
+          "pass": true,
+          "detail": "The assistant confirms the booking for Friday the 14th at 1:15 in the afternoon."
+        }
+      ],
+      "pass": true,
+      "transcript": [
+        {
+          "caller": "hi, i need to look something up on my account. my phone number on file is 5550100104",
+          "maya": "I sent a six-digit verification code to the phone number ending in 0104. Please read the code back to me.",
+          "tools": [
+            "start_verification"
+          ]
+        },
+        {
+          "caller": "the code is 869882",
+          "maya": "You\u2019re verified. What would you like to look up on your account?",
+          "tools": [
+            "finish_verification"
+          ]
+        },
+        {
+          "caller": "i'd like a follow-up appointment",
+          "maya": "I found these follow-up openings: Friday the 14th at 1:15 in the afternoon with Dr. Elena Vasquez, or Friday the 14th at 1:30 in the afternoon with Dr. Marcus Chen. Which would you prefer?",
+          "tools": [
+            "find_appointment_times"
+          ]
+        },
+        {
+          "caller": "the first one you offered is fine, please book it",
+          "maya": "You\u2019re all set. I booked your follow-up with Dr. Elena Vasquez for Friday the 14th at 1:15 in the afternoon.",
+          "tools": [
+            "book_appointment"
+          ]
+        }
+      ],
+      "seconds": 11.9
+    },
+    {
+      "id": "unknown-number-offers-registration",
+      "category": "business",
+      "description": "A returning caller's number turns out to have no record",
+      "checks": [
+        {
+          "check": "called start_verification",
+          "pass": true,
+          "detail": "tools seen: ['start_verification']"
+        },
+        {
+          "check": "verified == False",
+          "pass": true,
+          "detail": "actual: False"
+        },
+        {
+          "check": "judge",
+          "pass": true,
+          "detail": "It states no record was found and offers new-patient registration while requesting name and date of birth."
+        }
+      ],
+      "pass": true,
+      "transcript": [
+        {
+          "caller": "hi, i'd like to change the appointment i have booked",
+          "maya": "Sure, I can help with that. Please tell me the phone number on your file, including the area code.\n",
+          "tools": []
+        },
+        {
+          "caller": "my number is 555 999 8888",
+          "maya": "I couldn\u2019t find a patient record with that number. If you\u2019re a new patient, I can register you\u2014please provide your first name, last name, and date of birth.",
+          "tools": [
+            "start_verification"
+          ]
+        }
+      ],
+      "seconds": 6.7
+    },
+    {
+      "id": "register-new-patient",
+      "category": "normal",
+      "description": "First-time caller is registered and booked",
+      "checks": [
+        {
+          "check": "called register_new_patient",
+          "pass": true,
+          "detail": "tools seen: ['register_new_patient', 'find_appointment_times']"
+        },
+        {
+          "check": "verified == True",
+          "pass": true,
+          "detail": "actual: True"
+        },
+        {
+          "check": "judge",
+          "pass": true,
+          "detail": "It confirms the record is set up and immediately offers appointment times."
+        }
+      ],
+      "pass": true,
+      "transcript": [
+        {
+          "caller": "hi, i'm a new patient and i'd like to come in for a skin check",
+          "maya": "I can help with that. First, I\u2019ll set up your patient record. May I have your first and last name, date of birth, and phone number?\n",
+          "tools": []
+        },
+        {
+          "caller": "my number is 555 777 5969",
+          "maya": "Thanks. I still need your first and last name and your date of birth to create your record.",
+          "tools": []
+        },
+        {
+          "caller": "my name is Jordan Rivera, born 1990-04-12",
+          "maya": "Your record is set up. The soonest openings are Friday the 14th at 9 in the morning with Dr. Priya Raman, or Friday the 14th at 9 in the morning with Dr. Samuel Okafor. Would either work for your skin check?",
+          "tools": [
+            "register_new_patient",
+            "find_appointment_times"
+          ]
+        }
+      ],
+      "seconds": 9.2
+    }
+  ]
+}

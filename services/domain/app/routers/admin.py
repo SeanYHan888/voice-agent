@@ -25,6 +25,31 @@ def patients(
     return db.scalars(q).all()
 
 
+@router.get("/appointments")
+def appointments(
+    patient_id: int | None = None,
+    status: str | None = None,
+    _: Principal = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    q = select(Appointment).join(Slot).order_by(Slot.starts_at)
+    if patient_id is not None:
+        q = q.where(Appointment.patient_id == patient_id)
+    if status is not None:
+        q = q.where(Appointment.status == status)
+    return [
+        {
+            "id": a.id,
+            "patient_id": a.patient_id,
+            "status": a.status,
+            "starts_at": a.slot.starts_at,
+            "provider_name": a.slot.provider.name,
+            "visit_type": a.slot.visit_type.name,
+        }
+        for a in db.scalars(q).all()
+    ]
+
+
 @router.get("/tasks", response_model=list[AdminTaskOut])
 def tasks(
     status: str | None = "open",

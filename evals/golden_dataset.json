@@ -120,15 +120,15 @@
     {
       "id": "unknown-number-offers-registration",
       "category": "business",
-      "description": "Caller's number has no record",
+      "description": "A returning caller's number turns out to have no record",
       "turns": [
-        "i want to book my first appointment",
+        "hi, i'd like to change the appointment i have booked",
         "my number is 555 999 8888"
       ],
       "expect": {
         "tools_called": ["start_verification"],
         "verified": false,
-        "judge": "Explains no record matches that number and offers to register them as a new patient, asking for name and date of birth."
+        "judge": "Explains that no patient record matches that number, and offers a way forward such as registering them as a new patient. Must NOT pretend to have found a record."
       }
     },
     {
@@ -143,7 +143,7 @@
       "expect": {
         "tools_called": ["register_new_patient"],
         "verified": true,
-        "judge": "Confirms the record was created and moves on to finding an appointment time."
+        "judge": "Collects the details it needs and goes on to offer the caller specific appointment times."
       }
     },
     {

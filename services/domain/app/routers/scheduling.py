@@ -131,10 +131,11 @@ def cancel(
     if appt is None:
         raise HTTPException(404, "Unknown appointment")
     owns_or_admin(principal, appt.patient_id)
-    if appt.status != "booked":
+    if appt.status not in ("booked", "pending_change"):
         raise HTTPException(409, f"Appointment is {appt.status}")
 
-    if _within_approval_window(appt.slot.starts_at):
+    # Staff are the approvers, so their own cancellations don't queue for approval.
+    if principal.role != "admin" and _within_approval_window(appt.slot.starts_at):
         appt.status = "pending_change"
         db.add(
             AdminTask(
