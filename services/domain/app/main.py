@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from .db import Base, engine, ensure_pgvector, SessionLocal
 from .faq import ensure_corpus_embedded
-from .routers import admin, calls, faq, patients, scheduling, verification
+from .routers import admin, analytics, calls, faq, patients, scheduling, verification
 from .seed import seed
 
 
@@ -26,6 +26,7 @@ app.include_router(faq.router)
 app.include_router(calls.router)
 app.include_router(verification.router)
 app.include_router(admin.router)
+app.include_router(analytics.router)
 
 
 @app.get("/healthz")

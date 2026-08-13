@@ -231,6 +231,29 @@ def chat_completions(
     return _completion_payload(model, reply)
 
 
+class AnalyticsIn(BaseModel):
+    question: str
+
+
+@app.post("/analytics")
+def analytics(body: AnalyticsIn, authorization: str = Header(default="")):
+    """Admin-only. The caller's own token is forwarded, so the domain service — not this
+    service — decides whether the query may run at all."""
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing bearer token")
+    token = authorization.removeprefix("Bearer ")
+    try:
+        claims = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "Invalid token")
+    if claims.get("role") != "admin":
+        raise HTTPException(403, "Admin role required")
+
+    from .analytics import ask
+
+    return ask(body.question, token)
+
+
 @app.get("/v1/models")
 def models():
     """ElevenLabs probes this when validating a custom LLM endpoint."""
