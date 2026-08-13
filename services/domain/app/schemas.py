@@ -25,6 +25,7 @@ class PatientOut(BaseModel):
     last_name: str
     dob: date
     phone: str
+    user_id: int | None = None
 
     model_config = {"from_attributes": True}
 

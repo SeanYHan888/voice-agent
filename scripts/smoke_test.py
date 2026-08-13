@@ -126,13 +126,21 @@ def main() -> int:
     admin_token = body["access_token"]
 
     section("Claiming a clinic record")
+    # Records stay claimed between runs, so take whichever two are still free.
+    _, all_patients = call("GET", "/api/domain/admin/patients", token=admin_token)
+    unclaimed = [p for p in all_patients if p["user_id"] is None]
+    if len(unclaimed) < 2:
+        print("  SKIP  no unclaimed patient records left — run `docker compose down -v` to reseed")
+        return 1
+    first, second = unclaimed[0], unclaimed[1]
+
     status, _ = call("GET", "/api/domain/patients/me", token=ava_token)
     check("unlinked account has no patient record", status == 404)
 
     status, _ = call(
         "POST",
         "/api/domain/patients/claim",
-        {"phone": "+15550100101", "dob": "1980-01-01"},
+        {"phone": first["phone"], "dob": "1900-01-01"},
         token=ava_token,
     )
     check("claim with wrong date of birth is refused", status == 404)
@@ -140,7 +148,7 @@ def main() -> int:
     status, body = call(
         "POST",
         "/api/domain/patients/claim",
-        {"phone": "+15550100101", "dob": "1991-03-14"},
+        {"phone": first["phone"], "dob": first["dob"]},
         token=ava_token,
     )
     check("claim with matching details links the record", status == 200, str(body))
@@ -149,7 +157,7 @@ def main() -> int:
     status, _ = call(
         "POST",
         "/api/domain/patients/claim",
-        {"phone": "+15550100101", "dob": "1991-03-14"},
+        {"phone": first["phone"], "dob": first["dob"]},
         token=liam_token,
     )
     check("a claimed record cannot be taken over", status == 409)
@@ -157,7 +165,7 @@ def main() -> int:
     status, body = call(
         "POST",
         "/api/domain/patients/claim",
-        {"phone": "+15550100102", "dob": "1985-07-02"},
+        {"phone": second["phone"], "dob": second["dob"]},
         token=liam_token,
     )
     liam_patient_id = body["id"]
@@ -183,7 +191,11 @@ def main() -> int:
     check("double-booking the same slot is refused", status == 409)
 
     status, mine = call("GET", "/api/domain/appointments/me", token=ava_token)
-    check("appointment appears in my list", status == 200 and len(mine) == 1)
+    check(
+        "appointment appears in my list",
+        status == 200 and any(a["id"] == far_appointment_id for a in mine),
+        f"listed: {[a['id'] for a in mine]}",
+    )
 
     section("Access control")
     status, _ = call(
