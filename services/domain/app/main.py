@@ -3,7 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .db import Base, engine, ensure_pgvector, SessionLocal
-from .routers import admin, calls, patients, scheduling, verification
+from .faq import ensure_corpus_embedded
+from .routers import admin, calls, faq, patients, scheduling, verification
 from .seed import seed
 
 
@@ -13,6 +14,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         seed(db)
+        ensure_corpus_embedded(db)
     yield
 
 
@@ -20,6 +22,7 @@ app = FastAPI(title="domain-service", lifespan=lifespan)
 
 app.include_router(scheduling.router)
 app.include_router(patients.router)
+app.include_router(faq.router)
 app.include_router(calls.router)
 app.include_router(verification.router)
 app.include_router(admin.router)
