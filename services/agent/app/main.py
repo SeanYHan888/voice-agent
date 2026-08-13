@@ -124,10 +124,12 @@ def chat(body: ChatIn):
             session.call_id = domain.start_call(session)["id"]
         except Exception:
             log.warning("Could not open call record", exc_info=True)
-    reply = run_turn(session, body.message)
+    turn = run_turn(session, body.message)
     return {
         "session_id": session.id,
-        "reply": reply,
+        "reply": turn["reply"],
+        "tools_called": turn["tools_called"],
+        "guard": turn["guard"],
         "verified": session.is_verified,
         "patient_first_name": session.patient_first_name,
     }
@@ -221,7 +223,7 @@ def chat_completions(
             log.warning("Could not open call record", exc_info=True)
 
     user_text = _last_user_message(payload)
-    reply = run_turn(session, user_text) if user_text.strip() else GREETING
+    reply = run_turn(session, user_text)["reply"] if user_text.strip() else GREETING
     model = payload.get("model") or settings.voice_model
 
     if payload.get("stream"):

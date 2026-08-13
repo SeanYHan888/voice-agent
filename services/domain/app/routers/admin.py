@@ -8,9 +8,21 @@ from sqlalchemy.orm import Session
 from ..auth import Principal, require_admin
 from ..db import get_db
 from ..models import AdminTask, Appointment, Call, CallSummary, Feedback, Patient, Slot
-from ..schemas import AdminTaskOut
+from ..schemas import AdminTaskOut, PatientOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/patients", response_model=list[PatientOut])
+def patients(
+    phone: str | None = None,
+    _: Principal = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    q = select(Patient).order_by(Patient.id)
+    if phone:
+        q = q.where(Patient.phone == phone)
+    return db.scalars(q).all()
 
 
 @router.get("/tasks", response_model=list[AdminTaskOut])

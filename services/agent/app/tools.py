@@ -234,8 +234,8 @@ def lookup_clinic_info(question: str) -> str:
         return f"Couldn't reach the clinic information: {e.message}"
     if not results:
         return (
-            "Nothing in the clinic information covers that. Say you don't know rather than "
-            "guessing, and offer to have a staff member follow up."
+            "Nothing in the clinic information covers that. Tell the caller you don't have "
+            "that information rather than guessing, and offer to take a message for the staff."
         )
     return "\n\n".join(f"{r['title']}: {sanitise_retrieved(r['text'])}" for r in results)
 

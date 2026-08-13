@@ -1,7 +1,17 @@
 from datetime import date, datetime, timezone
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -56,10 +66,20 @@ class Slot(Base):
 
 class Appointment(Base):
     __tablename__ = "appointments"
+    # A slot may carry many cancelled appointments over its life but only one live
+    # one, so the uniqueness is on live rows rather than on slot_id outright.
+    __table_args__ = (
+        Index(
+            "uq_slot_live_appointment",
+            "slot_id",
+            unique=True,
+            postgresql_where=text("status IN ('booked', 'pending_change')"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
-    slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id"), unique=True)
+    slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id"))
     status: Mapped[str] = mapped_column(String(20), default="booked")  # booked | cancelled | pending_change
     call_id: Mapped[int | None] = mapped_column(ForeignKey("calls.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

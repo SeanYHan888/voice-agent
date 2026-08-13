@@ -181,8 +181,11 @@ def _make_checkpointer():
         return MemorySaver()
 
 
-def run_turn(session: CallSession, user_text: str) -> str:
-    """Advance one conversational turn and return what Maya should say."""
+def run_turn(session: CallSession, user_text: str) -> dict:
+    """Advance one conversational turn.
+
+    Returns the reply plus the tools this turn invoked — the evaluation suite asserts on
+    tool calls, since "did it refuse to book" is a fact about actions, not wording."""
     token = set_session(session)
     try:
         config = {
@@ -204,10 +207,28 @@ def run_turn(session: CallSession, user_text: str) -> str:
     finally:
         reset_session(token)
 
-    for message in reversed(result["messages"]):
-        if isinstance(message, AIMessage) and isinstance(message.content, str) and message.content.strip():
-            return message.content
-    return "Sorry, could you say that again?"
+    messages = result["messages"]
+    # Everything after the caller's turn belongs to this turn, not the checkpointed history.
+    start = max(
+        (i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=len(messages) - 1
+    )
+    this_turn = messages[start:]
+
+    tools_called = [
+        call["name"]
+        for message in this_turn
+        if isinstance(message, AIMessage)
+        for call in (getattr(message, "tool_calls", None) or [])
+    ]
+    reply = next(
+        (
+            m.content
+            for m in reversed(this_turn)
+            if isinstance(m, AIMessage) and isinstance(m.content, str) and m.content.strip()
+        ),
+        "Sorry, could you say that again?",
+    )
+    return {"reply": reply, "tools_called": tools_called, "guard": result.get("guard")}
 
 
 def transcript_of(session: CallSession) -> list[BaseMessage]:

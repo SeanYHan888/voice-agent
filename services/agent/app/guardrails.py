@@ -59,6 +59,21 @@ INJECTION_DEFLECTION = (
     "change, or cancel a visit?"
 )
 
+# Claiming to be staff, or asking after a named third party's records, is the shape of a
+# social-engineering attempt. Identity comes from Verification and nothing else.
+IDENTITY_CLAIM_PATTERNS = [
+    r"\bi'?m (actually |really )?(a |an )?(nurse|doctor|physician|staff|admin|administrator|receptionist)\b",
+    r"\b(act|acting) as (an? )?(admin|administrator|staff|nurse|doctor)\b",
+    r"\bon behalf of\b.*\bpatient\b",
+    r"\b(read|tell|give) me\b.*\b[A-Z][a-z]+ [A-Z][a-z]+'?s?\b.*\b(appointment|record|file|number)",
+]
+
+IDENTITY_CLAIM_DEFLECTION = (
+    "I'm not able to share anyone else's appointment details, and I can't take instructions "
+    "to work with different permissions — I can only verify the person I'm speaking with. "
+    "I'm happy to help with your own visit. Would you like to book or change one?"
+)
+
 OUT_OF_SCOPE_DEFLECTION = (
     "That one's outside what I can handle — I look after appointments and general clinic "
     "questions. I can pass a message to the staff, or book you a visit. Which would you prefer?"
@@ -82,6 +97,8 @@ def check_input(text: str) -> GuardVerdict:
     """Screen a caller turn before the model sees it."""
     if _matches(text, EMERGENCY_PATTERNS):
         return GuardVerdict(True, "emergency", EMERGENCY_DEFLECTION, "possible_emergency")
+    if _matches(text, IDENTITY_CLAIM_PATTERNS):
+        return GuardVerdict(True, "identity_claim", IDENTITY_CLAIM_DEFLECTION)
     if _matches(text, INJECTION_PATTERNS):
         return GuardVerdict(True, "prompt_injection", INJECTION_DEFLECTION)
     if _matches(text, MEDICAL_ADVICE_PATTERNS):
