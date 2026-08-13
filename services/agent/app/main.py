@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from . import domain_client as domain
 from .config import settings
 from .graph import get_graph, run_turn
+from .logging_middleware import RequestLogMiddleware
 from .prompts import GREETING
 from .session import store
 from .summarizer import summarise
@@ -27,6 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("agent")
 
 app = FastAPI(title="agent-service")
+app.add_middleware(RequestLogMiddleware, service="agent")
 
 
 class SessionStartIn(BaseModel):

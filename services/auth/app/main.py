@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 import jwt as pyjwt
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import Base, engine, get_db, SessionLocal
+from .logging_middleware import RequestLogMiddleware
 from .models import User
 from .security import create_token, decode_token, hash_password, verify_password
 
@@ -33,7 +35,10 @@ async def lifespan(app: FastAPI):
     yield
 
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
 app = FastAPI(title="auth-service", lifespan=lifespan)
+app.add_middleware(RequestLogMiddleware, service="auth")
 
 
 class RegisterIn(BaseModel):
