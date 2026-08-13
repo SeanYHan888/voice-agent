@@ -87,15 +87,15 @@ Docker Compose on a paid **t3.medium** EC2 (public URL doubles as the Twilio/Ele
 
 ## Sprint plan (6 days)
 
+Four working days. Day 1 (scaffold, schema + seed, auth service, Jira board) completed Aug 13.
+
 | Day | Focus |
 |---|---|
-| Aug 11 | Repo scaffold, Compose skeleton, DB schema + seed, auth-service, Jira populated & shared with trainers |
-| Aug 12 | Domain-service APIs; Maya's LangGraph core + tools (text-only harness); LangFuse wired |
-| Aug 13 | ElevenLabs custom-LLM bridge; browser widgets (public + portal); OTP verification flow (mock delivery) |
-| Aug 14 | Portal pages (shadcn/ui); post-call pipeline; admin dashboard + approval/escalation queues |
-| Aug 15 | Analytics agent; guardrail hardening; Golden Dataset authored + first full run |
-| Aug 16 | EC2 deploy; eval rerun + fixes; slide deck |
-| Aug 17 AM | Rehearsal (browser + phone), buffer. **Present 2 PM ET** |
+| Aug 13 | ✅ Scaffold, Compose stack, DB schema + seed, auth-service, Jira populated · domain-service business APIs (scheduling + 24h rule, calls, verification, admin queues) |
+| Aug 14 | Maya's LangGraph graph + tools + guardrails; LangFuse wired; ElevenLabs custom-LLM bridge; browser widgets (public + portal) |
+| Aug 15 | Portal pages (shadcn/ui); post-call pipeline; admin dashboard + approval/escalation queues; analytics agent |
+| Aug 16 | Golden Dataset authored + run/fix/rerun; EC2 deploy; slide deck |
+| Aug 17 AM | Rehearsal + buffer. **Present 2 PM ET** |
 
 ## Risks
 

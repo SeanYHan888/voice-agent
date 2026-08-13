@@ -61,6 +61,7 @@ class Appointment(Base):
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
     slot_id: Mapped[int] = mapped_column(ForeignKey("slots.id"), unique=True)
     status: Mapped[str] = mapped_column(String(20), default="booked")  # booked | cancelled | pending_change
+    call_id: Mapped[int | None] = mapped_column(ForeignKey("calls.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     patient: Mapped[Patient] = relationship()
@@ -111,6 +112,22 @@ class AdminTask(Base):
     call_id: Mapped[int | None] = mapped_column(ForeignKey("calls.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class VerificationCode(Base):
+    """One-time code proving a Caller is a Patient. Delivery is mocked: seeded patients
+    use fictional 555 numbers, so codes surface on an admin-only debug endpoint."""
+
+    __tablename__ = "verification_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    call_id: Mapped[int | None] = mapped_column(ForeignKey("calls.id"), nullable=True)
+    code: Mapped[str] = mapped_column(String(10))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class FaqChunk(Base):
