@@ -18,10 +18,14 @@ Medical clinics lose appointments and burn staff time on phone volume. Maya is a
 
 ## Voice architecture (ADR 0001)
 
-ElevenLabs Agents is the audio shell (STT, TTS, turn-taking, barge-in, native Twilio telephony). Its LLM points at the Agent Service's OpenAI-compatible endpoint, where the LangGraph workflow runs. Two transports, one brain:
+ElevenLabs Agents is the audio shell (STT, TTS, turn-taking, barge-in). Its LLM points at the Agent Service's OpenAI-compatible endpoint, where the LangGraph workflow runs. Two browser surfaces, one brain:
 
-- **Browser widget** embedded in the logged-in portal (JWT pre-verified) — demo spine.
-- **Twilio phone number** with SMS OTP verification — demo finale. Trial account: verify all demo phone numbers in the Twilio console on day 1.
+- **Public voice widget** (landing page, no login) — the anonymous-Caller path: FAQs answered freely; scheduling triggers in-conversation Verification.
+- **Portal voice widget** (logged-in, JWT pre-verified) — the known-Patient path.
+
+**Phone path deferred** (Aug 12): buying a Twilio number requires a business profile, so inbound PSTN calling is out of sprint scope (Jira AVA-20 stays as stretch). The architecture keeps it a config-level add — ElevenLabs' Twilio integration attaches to the same agent.
+
+**OTP delivery is mocked**: seeded patients use fictional 555 numbers, so real SMS was never demoable. Verification issues a real one-time code but "delivers" it to an admin-only debug endpoint (and logs); the demo shows it there. Twilio SMS remains an optional flag if a number materializes.
 
 ## Models
 
@@ -87,14 +91,14 @@ Docker Compose on a paid **t3.medium** EC2 (public URL doubles as the Twilio/Ele
 |---|---|
 | Aug 11 | Repo scaffold, Compose skeleton, DB schema + seed, auth-service, Jira populated & shared with trainers |
 | Aug 12 | Domain-service APIs; Maya's LangGraph core + tools (text-only harness); LangFuse wired |
-| Aug 13 | ElevenLabs custom-LLM bridge; browser widget in portal; OTP verification flow (Twilio SMS) |
+| Aug 13 | ElevenLabs custom-LLM bridge; browser widgets (public + portal); OTP verification flow (mock delivery) |
 | Aug 14 | Portal pages (shadcn/ui); post-call pipeline; admin dashboard + approval/escalation queues |
 | Aug 15 | Analytics agent; guardrail hardening; Golden Dataset authored + first full run |
-| Aug 16 | EC2 deploy; phone path end-to-end; eval rerun + fixes; slide deck |
+| Aug 16 | EC2 deploy; eval rerun + fixes; slide deck |
 | Aug 17 AM | Rehearsal (browser + phone), buffer. **Present 2 PM ET** |
 
 ## Risks
 
-- **Live phone demo fails in the room** → browser widget is the rehearsed spine; phone is the finale with instant fallback.
+- **Live voice demo fails in the room** → rehearse on hotspot; keep a text-chat harness against the same agent as last-resort fallback.
 - **ElevenLabs custom-LLM latency too high** → drop voice-turn reasoning to zero, trim system prompt, cache greeting audio.
-- **Solo time crunch** → cut order: analytics agent → phone transport (browser only) → chart polish. Never cut: LangGraph centrality, LangFuse, guardrails, Golden Dataset, access control.
+- **Solo time crunch** → cut order: analytics agent → chart polish. Never cut: LangGraph centrality, LangFuse, guardrails, Golden Dataset, access control.
