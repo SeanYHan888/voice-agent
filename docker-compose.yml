@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-maya}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maya_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-voiceagent}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-maya} -d $${POSTGRES_DB:-voiceagent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  auth:
+    build: services/auth
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maya:maya_dev_pw@postgres:5432/voiceagent}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@assortderm.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin-dev-password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  domain:
+    build: services/domain
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maya:maya_dev_pw@postgres:5432/voiceagent}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent:
+    build: services/agent
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://maya:maya_dev_pw@postgres:5432/voiceagent}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      DOMAIN_SERVICE_URL: http://domain:8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-https://us.cloud.langfuse.com}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: frontend
+
+  gateway:
+    build: gateway
+    ports:
+      - "80:80"
+    depends_on:
+      - auth
+      - domain
+      - agent
+      - frontend
+
+volumes:
+  pgdata:
