@@ -71,10 +71,24 @@ def seed(db: Session) -> None:
     db.add_all(providers + visit_types + patients)
     db.flush()
 
-    # Weekday slots for the next 14 days: mornings New Patient, afternoons Follow-up
     new_patient, follow_up = visit_types
     today = datetime.now(timezone.utc).date()
     slots: list[Slot] = []
+
+    # A few same-day/next-day slots pinned relative to *now*, so something is always
+    # bookable within 24 hours no matter what hour or weekday the seed runs. The 24h
+    # approval policy (and its demo, and its tests) depends on near-term slots existing.
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    for provider, hours_ahead in zip(providers, [3, 6, 12, 20]):
+        slots.append(
+            Slot(
+                provider_id=provider.id,
+                visit_type_id=follow_up.id,
+                starts_at=now + timedelta(hours=hours_ahead),
+            )
+        )
+
+    # Weekday slots for the next 14 days: mornings New Patient, afternoons Follow-up
     for day_offset in range(1, 15):
         day = today + timedelta(days=day_offset)
         if day.weekday() >= 5:
