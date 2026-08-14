@@ -1,0 +1,12 @@
+# Toolchain for local development. Versions match the Docker images so code behaves the
+# same on the host as in the containers (python:3.12-slim, node:22-alpine).
+# TypeScript is not listed here: it's a project dependency, pinned in frontend/package.json (~6.0).
+
+[tools]
+python = "3.12"
+node = "22"
+uv = "latest"
+
+[env]
+# Lets `mise exec -- python scripts/...` resolve imports from the repo root
+PYTHONPATH = "{{config_root}}"
