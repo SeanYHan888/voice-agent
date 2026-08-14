@@ -72,9 +72,26 @@ for the demo.)
 
 ## Updating after a code change
 
+Manual way, on the box:
+
 ```bash
 git pull && docker compose up -d --build
 ```
+
+Automatic way: CI/CD is already wired in `.github/workflows/ci.yml`. Every push runs the
+frontend build and the 53-check smoke test on a clean runner; the deploy job then ships to
+EC2, but stays dormant until you configure it. To turn it on, in the GitHub repo settings
+(Settings → Secrets and variables → Actions):
+
+| Kind | Name | Value |
+|---|---|---|
+| Variable | `DEPLOY_ENABLED` | `true` |
+| Secret | `EC2_HOST` | the instance's public IP |
+| Secret | `EC2_SSH_KEY` | contents of your `.pem` key file |
+| Secret | `EC2_USER` | `ubuntu` (optional — that's the default) |
+
+From then on, `git push` is the deployment: CI proves the stack, then the deploy job
+SSHes in, resets the box to `origin/main`, rebuilds, and health-checks the result.
 
 ## Demo-day fallback
 

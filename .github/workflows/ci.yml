@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend build + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build # tsc -b && vite build
+        working-directory: frontend
+
+  stack:
+    name: Compose stack + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # CI has no provider keys and needs none: FAQ embedding skips gracefully without
+      # an OpenAI key, and the smoke test exercises business rules and access control,
+      # never the LLM. These values only need to agree with what compose falls back to.
+      - name: Write CI env
+        run: |
+          cat > .env <<'EOF'
+          JWT_SECRET=dev-only-secret-change-me-0123456789abcdef
+          ADMIN_EMAIL=admin@assortderm.com
+          ADMIN_PASSWORD=admin-dev-password
+          EOF
+
+      - name: Build and start
+        run: docker compose up -d --build
+
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost/api/auth/healthz >/dev/null \
+               && curl -sf http://localhost/api/domain/healthz >/dev/null \
+               && curl -sf http://localhost/api/agent/healthz >/dev/null; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "services never became healthy"; exit 1
+
+      - name: Smoke test (53 checks)
+        run: python3 scripts/smoke_test.py
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail 100
+
+  deploy:
+    name: Deploy to EC2
+    needs: [frontend, stack]
+    # Dormant until the repo variable DEPLOY_ENABLED is set to 'true'
+    # (Settings → Secrets and variables → Actions → Variables).
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency: deploy-production
+    steps:
+      - name: Deploy over SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" '
+            set -e
+            cd ~/voice-agent
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose up -d --build
+            docker image prune -f
+          '
+
+      - name: Verify deployment
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          sleep 10
+          curl -sf "http://$EC2_HOST/api/agent/healthz"
+          curl -sf "http://$EC2_HOST/api/domain/healthz"
+          echo "deployed and healthy"
