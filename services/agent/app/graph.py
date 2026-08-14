@@ -69,7 +69,16 @@ def _build_llm() -> ChatOpenAI:
     return ChatOpenAI(**kwargs).bind_tools(ALL_TOOLS)
 
 
-_llm = _build_llm()
+# Constructed on first use, not at import: the client raises without an API key, and a
+# missing key should degrade conversations, not stop the service from booting.
+_llm: object | None = None
+
+
+def _get_llm():
+    global _llm
+    if _llm is None:
+        _llm = _build_llm()
+    return _llm
 
 
 def input_guard(state: AgentState) -> dict:
@@ -97,7 +106,7 @@ def reason(state: AgentState) -> dict:
     global _llm, _reasoning_effort
     messages = [SystemMessage(content=system_prompt()), *state["messages"]]
     try:
-        return {"messages": [_llm.invoke(messages)]}
+        return {"messages": [_get_llm().invoke(messages)]}
     except Exception as e:
         if _reasoning_effort != "none" and "reasoning" in str(e).lower():
             log.warning("Model rejected reasoning_effort=%s; falling back to none", _reasoning_effort)
