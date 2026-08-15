@@ -47,8 +47,8 @@ function ClaimRecord({ onLinked }: { onLinked: () => void }) {
           <Link2 className="size-4" /> Link your clinic record
         </CardTitle>
         <CardDescription>
-          Enter the phone number and date of birth we have on file. Try +15550100101 with
-          1991-03-14.
+          Enter the phone number and date of birth we have on file. Demo record: Emma
+          Patel, phone 555-010-0104, born 1996-01-09.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -57,7 +57,7 @@ function ClaimRecord({ onLinked }: { onLinked: () => void }) {
             <Label htmlFor="phone">Phone on file</Label>
             <Input
               id="phone"
-              placeholder="+15550100101"
+              placeholder="555-010-0104"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               required

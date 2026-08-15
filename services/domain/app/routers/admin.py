@@ -25,6 +25,21 @@ def patients(
     return db.scalars(q).all()
 
 
+@router.post("/patients/{patient_id}/unlink")
+def unlink_patient(
+    patient_id: int,
+    _: Principal = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Detach a clinic record from its portal account, so it can be claimed again."""
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(404, "Unknown patient")
+    patient.user_id = None
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/appointments")
 def appointments(
     patient_id: int | None = None,

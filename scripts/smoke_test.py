@@ -369,6 +369,13 @@ def main() -> int:
     check("stats average feedback", stats["avg_feedback"] > 0)
     check("stats report booking conversion", "booking_conversion" in stats)
 
+    section("Cleanup")
+    # Release the seeded records this run claimed, so a shared database — the EC2 box,
+    # a teammate's stack — doesn't slowly run out of demo patients.
+    for pid in (ava_patient_id, liam_patient_id):
+        status, _ = call("POST", f"/api/domain/admin/patients/{pid}/unlink", token=admin_token)
+        check(f"released patient {pid} for reuse", status == 200)
+
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 

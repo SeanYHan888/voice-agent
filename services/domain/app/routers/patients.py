@@ -10,6 +10,15 @@ from ..schemas import ClaimIn, PatientOut, RegisterPatientIn
 router = APIRouter(prefix="/patients", tags=["patients"])
 
 
+def normalize_phone(raw: str) -> str:
+    """Accept whatever a person types — 555-010-0104, (555) 010 0104, +1 555… — and
+    return the E.164 form records are stored in. Same rule the voice agent applies."""
+    digits = "".join(c for c in raw if c.isdigit())
+    if len(digits) == 10:
+        digits = f"1{digits}"
+    return f"+{digits}"
+
+
 @router.get("/me", response_model=PatientOut)
 def me(principal: Principal = Depends(get_principal), db: Session = Depends(get_db)):
     if principal.patient_id is None:
@@ -27,11 +36,13 @@ def claim(
     match, and a record already claimed by another account cannot be taken over."""
     if principal.role != "patient":
         raise HTTPException(403, "Only patient accounts can claim a record")
-    patient = db.scalar(select(Patient).where(Patient.phone == body.phone))
+    patient = db.scalar(select(Patient).where(Patient.phone == normalize_phone(body.phone)))
     if patient is None or patient.dob != body.dob:
-        raise HTTPException(404, "No matching patient record")
+        raise HTTPException(404, "No patient record matches that phone number and date of birth")
     if patient.user_id is not None and patient.user_id != principal.user_id:
-        raise HTTPException(409, "That record is already linked to another account")
+        raise HTTPException(
+            409, "That record is already linked to another account — try a different patient"
+        )
     patient.user_id = principal.user_id
     db.commit()
     db.refresh(patient)
@@ -48,13 +59,14 @@ def register(
     or an admin — never by an ordinary portal account."""
     if principal.role not in ("agent", "admin"):
         raise HTTPException(403, "Not permitted")
-    if db.scalar(select(Patient).where(Patient.phone == body.phone)) is not None:
+    phone = normalize_phone(body.phone)
+    if db.scalar(select(Patient).where(Patient.phone == phone)) is not None:
         raise HTTPException(409, "A patient with that phone number already exists")
     patient = Patient(
         first_name=body.first_name,
         last_name=body.last_name,
         dob=body.dob,
-        phone=body.phone,
+        phone=phone,
     )
     db.add(patient)
     db.commit()
