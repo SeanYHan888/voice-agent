@@ -76,15 +76,19 @@ jobs:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          # printf + explicit newline: OpenSSH rejects a PEM whose footer isn't
+          # newline-terminated, and secrets don't reliably preserve trailing whitespace.
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" '
+          ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null || { echo "::error::EC2_SSH_KEY is not a valid private key"; exit 1; }
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=20 -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" '
             set -e
             cd ~/voice-agent
             git fetch origin main
             git reset --hard origin/main
-            docker compose up -d --build
+            # The box runs the HTTPS overlay; deploying without it would drop TLS.
+            docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
             docker image prune -f
           '
 
@@ -92,7 +96,12 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          sleep 10
-          curl -sf "http://$EC2_HOST/api/agent/healthz"
-          curl -sf "http://$EC2_HOST/api/domain/healthz"
-          echo "deployed and healthy"
+          for i in $(seq 1 30); do
+            if curl -sf "https://$EC2_HOST/api/agent/healthz" >/dev/null \
+               && curl -sf "https://$EC2_HOST/api/domain/healthz" >/dev/null \
+               && curl -sf "https://$EC2_HOST/api/auth/healthz" >/dev/null; then
+              echo "deployed and healthy after ${i} checks"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::services not healthy after deploy"; exit 1
