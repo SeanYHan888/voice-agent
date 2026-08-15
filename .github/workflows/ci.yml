@@ -80,6 +80,28 @@ jobs:
           echo "key lines: $(printf '%s' "$EC2_SSH_KEY" | wc -l), sha256: $(printf '%s' "$EC2_SSH_KEY" | sha256sum | cut -c1-12)"
           [ -n "$EC2_HOST" ] && [ -n "$EC2_SSH_KEY" ]
 
+      # SSH on the box is restricted to a single home IP. Rather than open port 22 to the
+      # world, the runner opens a hole for its own address, deploys, and closes it again —
+      # the IAM user behind these credentials can do nothing except toggle that one rule.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Open SSH for this runner
+        id: sg
+        env:
+          SG_ID: ${{ secrets.EC2_SECURITY_GROUP_ID }}
+        run: |
+          RUNNER_IP=$(curl -s https://checkip.amazonaws.com | tr -d '[:space:]')
+          echo "runner_ip=$RUNNER_IP" >> "$GITHUB_OUTPUT"
+          aws ec2 authorize-security-group-ingress --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$RUNNER_IP/32,Description=github-actions-deploy}]" \
+            --output text >/dev/null
+          echo "opened 22 for $RUNNER_IP"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -96,6 +118,17 @@ jobs:
             # The box runs the HTTPS overlay; deploying without it would drop TLS.
             docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
             docker image prune -f
+
+      - name: Close SSH for this runner
+        if: always() && steps.sg.outputs.runner_ip != ''
+        env:
+          SG_ID: ${{ secrets.EC2_SECURITY_GROUP_ID }}
+          RUNNER_IP: ${{ steps.sg.outputs.runner_ip }}
+        run: |
+          aws ec2 revoke-security-group-ingress --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$RUNNER_IP/32}]" \
+            --output text >/dev/null
+          echo "closed 22 for $RUNNER_IP"
 
       - name: Verify deployment
         env:

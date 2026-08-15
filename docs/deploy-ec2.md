@@ -121,6 +121,13 @@ EC2, but stays dormant until you configure it. To turn it on, in the GitHub repo
 | Secret | `EC2_HOST` | the instance's public IP |
 | Secret | `EC2_SSH_KEY` | contents of your `.pem` key file |
 | Secret | `EC2_USER` | `ubuntu` (optional — that's the default) |
+| Secret | `EC2_SECURITY_GROUP_ID` | the instance's security group (`sg-…`) |
+| Secret | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | an IAM user allowed only to authorize/revoke ingress on that one group |
+
+Why the AWS credentials: the security group keeps SSH restricted to your own IP, and
+GitHub's runners come from a different address every time. So the deploy job opens port
+22 for the runner's IP, deploys, and closes it again in an `always()` step. The IAM user
+holds exactly those two permissions on exactly that group and nothing else.
 
 From then on, `git push` is the deployment: CI proves the stack, then the deploy job
 SSHes in, resets the box to `origin/main`, rebuilds, and health-checks the result.
