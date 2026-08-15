@@ -12,7 +12,8 @@ In the EC2 console:
 - **Type**: `t3.medium` (~$0.05/hr — free-tier micros can't hold six containers)
 - **Storage**: 20 GB gp3
 - **Key pair**: create/download one for SSH
-- **Security group**: inbound `22` (SSH, your IP only) and `80` (HTTP, anywhere)
+- **Security group**: inbound `22` (SSH, your IP only), plus `80` and `443`
+  (HTTP/HTTPS, anywhere)
 
 ## 2. Install Docker on the box
 
@@ -58,24 +59,55 @@ python3 scripts/smoke_test.py    # expects the stack on localhost:80 — works a
 python3 evals/run_eval.py        # full Golden Dataset against the deployed agent
 ```
 
-## 5. Point ElevenLabs at it
+## 5. Add HTTPS to the EC2 public IP
+
+ElevenLabs requires a trusted HTTPS custom-LLM endpoint. Let’s Encrypt now issues
+short-lived certificates directly for public IP addresses, so a domain is optional.
+
+Add these values to the server's `.env`:
+
+```dotenv
+PUBLIC_HOST=EC2_PUBLIC_IP
+LETSENCRYPT_EMAIL=you@example.com
+```
+
+Then provision the first certificate and start the HTTPS Compose overlay:
+
+```bash
+./scripts/provision-ip-https.sh
+curl -I https://EC2_PUBLIC_IP/
+```
+
+IP certificates last about six days. Install a daily renewal cron job on the EC2 host:
+
+```bash
+(crontab -l 2>/dev/null; echo '17 3 * * * cd /home/ubuntu/voice-agent && ./scripts/renew-ip-https.sh >> /home/ubuntu/voice-agent/certbot-renew.log 2>&1') | crontab -
+```
+
+For later deploys, keep using the overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+```
+
+## 6. Point ElevenLabs at it
 
 In the agent's dashboard settings, set the custom LLM Server URL to:
 
 ```
-http://EC2_PUBLIC_IP/api/agent/v1
+https://EC2_PUBLIC_IP/api/agent/v1
 ```
 
-(ElevenLabs accepts plain HTTP for custom LLM endpoints; if you'd rather have HTTPS,
-put the box behind a free Cloudflare proxy or add a caddy container later — not needed
-for the demo.)
+Set the custom LLM API key to the same value as `ELEVENLABS_LLM_API_KEY` in
+the server's `.env`. Add both `localhost` and the EC2 IP to the agent's allowed origins.
 
 ## Updating after a code change
 
 Manual way, on the box:
 
 ```bash
-git pull && docker compose up -d --build
+git pull
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
 ```
 
 Automatic way: CI/CD is already wired in `.github/workflows/ci.yml`. Every push runs the

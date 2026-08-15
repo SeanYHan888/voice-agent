@@ -159,12 +159,12 @@ export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
         )}
       </form>
 
-      {AGENT_ID && (
+      {AGENT_ID && sessionId && (
         // ElevenLabs web component; it connects to the same agent, which calls our
         // OpenAI-compatible endpoint for every turn.
         <div id="voice" className="border-t px-3 py-2">
           {/* @ts-expect-error custom element provided by the ElevenLabs widget script */}
-          <elevenlabs-convai agent-id={AGENT_ID} />
+          <elevenlabs-convai agent-id={AGENT_ID} user-id={sessionId} />
         </div>
       )}
     </div>

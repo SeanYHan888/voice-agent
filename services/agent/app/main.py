@@ -6,6 +6,7 @@ Three surfaces onto the same LangGraph workflow:
 - `POST /v1/chat/completions` — the OpenAI-compatible shape ElevenLabs calls as its "custom LLM"
 - `POST /calls/{id}/wrapup`  — ends a call and runs the post-call summary agent
 """
+import hmac
 import json
 import logging
 import time
@@ -150,13 +151,24 @@ def wrapup(session_id: str, background: BackgroundTasks):
 # --- OpenAI-compatible surface for ElevenLabs ---------------------------------
 
 
+def _require_elevenlabs_key(authorization: str) -> None:
+    """Protect the public custom-LLM surface with the key configured in ElevenLabs."""
+    expected = settings.elevenlabs_llm_api_key
+    if not expected:
+        raise HTTPException(503, "Custom LLM API key is not configured")
+    if not hmac.compare_digest(authorization, f"Bearer {expected}"):
+        raise HTTPException(401, "Invalid custom LLM API key")
+
+
 def _extract_session_id(payload: dict, header_session: str) -> str | None:
     for candidate in (
         header_session,
         payload.get("session_id"),
         payload.get("user"),
+        payload.get("user_id"),
         payload.get("conversation_id"),
         (payload.get("metadata") or {}).get("session_id"),
+        (payload.get("elevenlabs_extra_body") or {}).get("session_id"),
     ):
         if candidate:
             return str(candidate)
@@ -214,8 +226,11 @@ def _stream_chunks(model: str, content: str):
 
 @app.post("/v1/chat/completions")
 def chat_completions(
-    payload: dict = Body(...), x_session_id: str = Header(default="", alias="X-Session-Id")
+    payload: dict = Body(...),
+    x_session_id: str = Header(default="", alias="X-Session-Id"),
+    authorization: str = Header(default=""),
 ):
+    _require_elevenlabs_key(authorization)
     session_id = _extract_session_id(payload, x_session_id)
     session = store.get_or_create(session_id, transport="browser")
     if session.call_id is None:
@@ -257,8 +272,9 @@ def analytics(body: AnalyticsIn, authorization: str = Header(default="")):
 
 
 @app.get("/v1/models")
-def models():
+def models(authorization: str = Header(default="")):
     """ElevenLabs probes this when validating a custom LLM endpoint."""
+    _require_elevenlabs_key(authorization)
     return {
         "object": "list",
         "data": [{"id": settings.voice_model, "object": "model", "owned_by": "assort-dermatology"}],

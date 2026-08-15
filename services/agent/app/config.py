@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
 
     openai_api_key: str = ""
+    elevenlabs_llm_api_key: str = ""
     # Voice turns need first-token latency under a second; analysis can afford to think.
     voice_model: str = "gpt-5.6-luna"
     analysis_model: str = "gpt-5.6-terra"
