@@ -35,6 +35,19 @@ python3 scripts/talk.py            # talk to Maya in the terminal
 
 What testing found, including two bugs it caught: [evals/FINDINGS.md](evals/FINDINGS.md).
 
+## Dependencies
+
+Each Python service owns a `pyproject.toml` and a `uv.lock`; the Docker images install
+from the lockfile with `uv sync --locked`, so what runs is exactly what was tested. To
+add or bump a dependency, edit the service's `pyproject.toml` and re-lock:
+
+```bash
+cd services/agent && uv lock
+```
+
+The host-side scripts (`scripts/`, `evals/`) are stdlib-only on purpose — nothing to
+install to run them. `mise install` gives you matching `python`, `node`, and `uv`.
+
 ## How it fits together
 
 ```

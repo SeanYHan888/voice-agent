@@ -23,18 +23,29 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/${PUBLIC_HOST}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    # Re-resolve service names through Docker's DNS instead of pinning the IPs nginx saw
+    # at boot — a deploy recreates services on new IPs. See gateway/nginx.conf.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $auth     http://auth:8000;
+    set $domain   http://domain:8000;
+    set $agent    http://agent:8000;
+    set $frontend http://frontend:80;
+
     location /api/auth/ {
-        proxy_pass http://auth:8000/;
+        rewrite ^/api/auth/(.*)$ /$1 break;
+        proxy_pass $auth;
         include /etc/nginx/proxy_common.conf;
     }
 
     location /api/domain/ {
-        proxy_pass http://domain:8000/;
+        rewrite ^/api/domain/(.*)$ /$1 break;
+        proxy_pass $domain;
         include /etc/nginx/proxy_common.conf;
     }
 
     location /api/agent/ {
-        proxy_pass http://agent:8000/;
+        rewrite ^/api/agent/(.*)$ /$1 break;
+        proxy_pass $agent;
         include /etc/nginx/proxy_common.conf;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -43,7 +54,7 @@ server {
     }
 
     location / {
-        proxy_pass http://frontend:80/;
+        proxy_pass $frontend;
         include /etc/nginx/proxy_common.conf;
     }
 }

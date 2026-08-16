@@ -1,0 +1,25 @@
+[project]
+name = "agent-service"
+version = "0.1.0"
+description = "Maya's LangGraph workflows: the conversation, the post-call summary, and analytics"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "httpx>=0.27",
+    "PyJWT>=2.9",
+    "langgraph>=0.2.50",
+    "langgraph-checkpoint-postgres>=2.0",
+    "langchain>=0.3",
+    "langchain-core>=0.3",
+    "langchain-openai>=0.2",
+    "langfuse>=3.0",
+    "psycopg[binary,pool]>=3.2",
+]
+
+# The service is a plain package directory, not something to build or publish;
+# uv only needs it for its lockfile.
+[tool.uv]
+package = false
