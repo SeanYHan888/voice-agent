@@ -14,3 +14,6 @@ dist/
 
 # Misc
 .DS_Store
+
+# Personal teaching workspace (see teaching/MISSION.md)
+/teaching/
