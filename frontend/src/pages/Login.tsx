@@ -31,13 +31,13 @@ export function Login({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-6">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <div className="mb-2 flex items-center gap-2">
+          <Link to="/" className="mb-2 flex w-fit items-center gap-2 hover:opacity-80">
             <Stethoscope className="size-5 text-primary" />
             <span className="font-semibold">Assort Dermatology</span>
-          </div>
+          </Link>
           <CardTitle>{mode === "login" ? "Sign in" : "Create an account"}</CardTitle>
           <CardDescription>
             {mode === "login"
@@ -92,6 +92,9 @@ export function Login({ mode }: { mode: "login" | "register" }) {
           </form>
         </CardContent>
       </Card>
+      <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+        ← Back to home
+      </Link>
     </div>
   );
 }

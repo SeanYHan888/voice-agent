@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { AuthProvider, RequireRole } from "@/lib/auth";
-import { getRole, getToken } from "@/lib/api";
+import { Landing } from "@/pages/Landing";
 import { Login } from "@/pages/Login";
 import { PatientHome } from "@/pages/PatientHome";
 import { CallHistory } from "@/pages/CallHistory";
@@ -10,17 +10,12 @@ import { AdminQueue } from "@/pages/AdminQueue";
 import { AdminAnalytics } from "@/pages/AdminAnalytics";
 import { AdminInbox } from "@/pages/AdminInbox";
 
-function Home() {
-  if (!getToken()) return <Navigate to="/login" replace />;
-  return <Navigate to={getRole() === "admin" ? "/admin" : "/portal"} replace />;
-}
-
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login mode="login" />} />
           <Route path="/register" element={<Login mode="register" />} />
 
@@ -48,7 +43,7 @@ export default function App() {
             <Route path="/admin/inbox" element={<AdminInbox />} />
           </Route>
 
-          <Route path="*" element={<Home />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
