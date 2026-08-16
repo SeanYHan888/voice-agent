@@ -53,6 +53,9 @@ jobs:
           done
           echo "services never became healthy"; exit 1
 
+      - name: Check API documentation routes
+        run: python3 scripts/check_api_docs.py
+
       - name: Smoke test (53 checks)
         run: python3 scripts/smoke_test.py
 

@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-app = FastAPI(title="domain-service", lifespan=lifespan)
+app = FastAPI(title="domain-service", root_path="/api/domain", lifespan=lifespan)
 app.add_middleware(RequestLogMiddleware, service="domain")
 
 app.include_router(scheduling.router)

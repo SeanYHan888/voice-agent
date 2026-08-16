@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-app = FastAPI(title="auth-service", lifespan=lifespan)
+app = FastAPI(title="auth-service", root_path="/api/auth", lifespan=lifespan)
 app.add_middleware(RequestLogMiddleware, service="auth")
 
 

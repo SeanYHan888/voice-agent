@@ -29,7 +29,7 @@ from .summarizer import summarise
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("agent")
 
-app = FastAPI(title="agent-service")
+app = FastAPI(title="agent-service", root_path="/api/agent")
 app.add_middleware(RequestLogMiddleware, service="agent")
 
 
