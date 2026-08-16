@@ -48,10 +48,15 @@ export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
   }, [messages]);
 
   // The voice widget dispatches `elevenlabs-convai:call` just before it connects, with a
-  // mutable session config. Stamp our session id on every channel the platform offers —
-  // user id, custom-LLM extra body, and a dynamic variable the agent's system prompt
-  // interpolates — so the voice turns land in the same LangGraph thread as the text ones.
-  // Without this every voice turn is a stranger and Maya re-asks what she already knows.
+  // mutable session config. Stamp our session id on it as the user id and as a dynamic
+  // variable the agent's system prompt interpolates, so the voice turns land in the same
+  // LangGraph thread as the text ones. Without this every voice turn is a stranger and
+  // Maya re-asks what she already knows.
+  //
+  // Deliberately NOT set: customLlmExtraBody. ElevenLabs treats that as an override the
+  // agent must explicitly permit, and refuses the whole call otherwise ("Custom LLM extra
+  // body override is not allowed for this AI agent"). The two channels above need no
+  // dashboard permission.
   useEffect(() => {
     if (!AGENT_ID || !sessionId) return;
     const widget = document.getElementById("voice-widget");
@@ -60,7 +65,6 @@ export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
       const config = (event as CustomEvent<{ config: Record<string, unknown> }>).detail?.config;
       if (!config) return;
       config.userId = sessionId;
-      config.customLlmExtraBody = { session_id: sessionId };
       config.dynamicVariables = {
         ...((config.dynamicVariables as Record<string, unknown> | undefined) ?? {}),
         session_id: sessionId,

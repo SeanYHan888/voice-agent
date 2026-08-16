@@ -10,8 +10,8 @@ jobs:
     name: Frontend build + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -25,7 +25,7 @@ jobs:
     name: Compose stack + smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # CI has no provider keys and needs none: FAQ embedding skips gracefully without
       # an OpenAI key, and the smoke test exercises business rules and access control,
@@ -87,7 +87,7 @@ jobs:
       # world, the runner opens a hole for its own address, deploys, and closes it again —
       # the IAM user behind these credentials can do nothing except toggle that one rule.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -113,8 +113,10 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           timeout: 60s
           command_timeout: 20m
-          script_stop: true
           script: |
+            # ssh-action v1 dropped `script_stop`; `set -e` is its documented replacement,
+            # so a failed fetch or build aborts here instead of running the next line.
+            set -e
             cd ~/voice-agent
             git fetch origin main
             git reset --hard origin/main

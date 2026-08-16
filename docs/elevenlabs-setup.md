@@ -42,7 +42,9 @@ In the ElevenLabs dashboard, create a Conversational AI agent and set:
 | **API key** | the same random value stored as `ELEVENLABS_LLM_API_KEY` in the app's `.env` |
 | **First message** | `Thanks for calling Assort Dermatology, this is Maya. How can I help you today?` |
 | **System prompt** | exactly the two lines below — nothing else. Maya's real prompt is applied server-side, inside the graph |
-| **Custom LLM extra body** | on |
+
+Leave **Custom LLM extra body** off. The widget doesn't send one; if it did, ElevenLabs
+would refuse the call outright until that override is permitted.
 
 System prompt field:
 
@@ -83,13 +85,14 @@ a microphone alongside the text box, both driving the same session.
 
 The widget opens a session with our agent service first (`POST /api/agent/session`) and
 gets a `session_id`. Just before the widget connects it fires `elevenlabs-convai:call`;
-we use that hook to stamp the id on the session config as `userId`, `customLlmExtraBody`,
-and the `session_id` dynamic variable, so it reaches our endpoint whichever of those the
-platform forwards. The service reads, in order: `X-Session-Id`, `user`/`user_id`,
-`session_id` in the extra body or dynamic variables, `session_id=` in the platform's
-system prompt, then the ElevenLabs conversation id (`conversation_id=` in the system
-prompt or extra body). The browser and voice paths converge on the same server-side
-session.
+we use that hook to stamp the id on the session config as `userId` and as the
+`session_id` dynamic variable, so it reaches our endpoint whichever of those the platform
+forwards. (Not as `customLlmExtraBody`: that counts as an override, and an agent that
+hasn't been told to allow it refuses the entire call.) The service reads, in order:
+`X-Session-Id`, `user`/`user_id`, `session_id` in the extra body or dynamic variables,
+`session_id=` in the platform's system prompt, then the ElevenLabs conversation id
+(`conversation_id=` in the system prompt or extra body). The browser and voice paths
+converge on the same server-side session.
 
 That id is the only thing tying a voice turn to a verified patient. The patient id itself
 lives server-side in the session store and is never accepted from the request body, so a
@@ -114,7 +117,11 @@ warning as a configuration bug, not a runtime one.
   existing patient?", you answer, she says "welcome back, what would you like to do?",
   and round it goes. The session id isn't arriving. Look for `Voice turn arrived without
   any session or conversation id` in `docker compose logs agent`, then check the agent's
-  system prompt carries the two marker lines above and that "Custom LLM extra body" is on.
+  system prompt carries the two marker lines above.
+- **The widget shows "Custom LLM extra body override is not allowed for this AI agent"**
+  — something is setting `customLlmExtraBody` on the widget's session config. Our hook
+  doesn't; if you've added one, either remove it or permit the override under the agent's
+  Security settings.
 - **Long silences before she speaks** — check the LangFuse trace for that turn. Tool calls
   add a round trip; two chained tool calls in one turn is the usual cause.
 - **She talks over the caller** — that's ElevenLabs' turn-taking, not ours; adjust the
