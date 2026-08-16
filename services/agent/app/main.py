@@ -9,6 +9,7 @@ Three surfaces onto the same LangGraph workflow:
 import hmac
 import json
 import logging
+import re
 import time
 import uuid
 
@@ -19,7 +20,7 @@ from pydantic import BaseModel
 
 from . import domain_client as domain
 from .config import settings
-from .graph import get_graph, run_turn
+from .graph import get_graph, run_turn, seed_history
 from .logging_middleware import RequestLogMiddleware
 from .prompts import GREETING
 from .session import store
@@ -160,29 +161,90 @@ def _require_elevenlabs_key(authorization: str) -> None:
         raise HTTPException(401, "Invalid custom LLM API key")
 
 
+# Markers the ElevenLabs agent's system prompt is configured to carry, e.g.
+# "session_id={{session_id}}" and "conversation_id={{system__conversation_id}}". Dynamic
+# variables are interpolated into that prompt before it reaches us, which makes it the one
+# channel that works from the widget, the dashboard test console, and a phone call alike.
+_SESSION_MARKER = re.compile(r"\bsession_id[ \t]*[=:][ \t]*([A-Za-z0-9._:-]{8,})")
+_CONVERSATION_MARKER = re.compile(r"\bconversation_id[ \t]*[=:][ \t]*([A-Za-z0-9._:-]{8,})")
+
+
+def _usable(candidate) -> str | None:
+    """A candidate id, or None if it's empty or an un-substituted {{template}}."""
+    if not candidate:
+        return None
+    text = str(candidate).strip()
+    if not text or "{{" in text or text.lower() in {"none", "null", "undefined"}:
+        return None
+    return text
+
+
 def _extract_session_id(payload: dict, header_session: str) -> str | None:
+    """Work out which call session this turn belongs to.
+
+    Ordered by specificity: an id the widget minted (which may already carry a
+    portal-verified patient) beats the voice platform's own conversation id, which is
+    still stable for the life of one call and is what keeps memory and verification
+    intact when nothing else is passed."""
+    extra = payload.get("elevenlabs_extra_body") or {}
+    dynamic = extra.get("dynamic_variables") or {}
+    system_text = "\n".join(
+        str(m.get("content") or "")
+        for m in payload.get("messages", [])
+        if m.get("role") == "system"
+    )
+    session_marker = _SESSION_MARKER.search(system_text)
+    conversation_marker = _CONVERSATION_MARKER.search(system_text)
+
     for candidate in (
         header_session,
         payload.get("session_id"),
         payload.get("user"),
         payload.get("user_id"),
-        payload.get("conversation_id"),
         (payload.get("metadata") or {}).get("session_id"),
-        (payload.get("elevenlabs_extra_body") or {}).get("session_id"),
+        extra.get("session_id"),
+        dynamic.get("session_id"),
+        session_marker.group(1) if session_marker else None,
+        payload.get("conversation_id"),
+        extra.get("conversation_id"),
+        extra.get("system__conversation_id"),
+        dynamic.get("system__conversation_id"),
+        conversation_marker.group(1) if conversation_marker else None,
     ):
-        if candidate:
-            return str(candidate)
+        if usable := _usable(candidate):
+            return usable
     return None
+
+
+def _message_text(message: dict) -> str:
+    content = message.get("content")
+    if isinstance(content, list):  # multimodal content parts
+        return " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+    return str(content or "")
 
 
 def _last_user_message(payload: dict) -> str:
     for message in reversed(payload.get("messages", [])):
         if message.get("role") == "user":
-            content = message.get("content")
-            if isinstance(content, list):  # multimodal content parts
-                return " ".join(part.get("text", "") for part in content if isinstance(part, dict))
-            return str(content or "")
+            return _message_text(message)
     return ""
+
+
+def _prior_turns(payload: dict) -> list:
+    """Everything the platform remembers before this turn's user message, as graph
+    messages. Its own system prompt is dropped — ours is applied inside the graph."""
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    messages = [m for m in payload.get("messages", []) if m.get("role") in ("user", "assistant")]
+    if messages and messages[-1].get("role") == "user":
+        messages = messages[:-1]
+    prior = []
+    for m in messages:
+        text = _message_text(m).strip()
+        if not text:
+            continue
+        prior.append(HumanMessage(content=text) if m["role"] == "user" else AIMessage(content=text))
+    return prior
 
 
 def _completion_payload(model: str, content: str) -> dict:
@@ -232,12 +294,29 @@ def chat_completions(
 ):
     _require_elevenlabs_key(authorization)
     session_id = _extract_session_id(payload, x_session_id)
-    session = store.get_or_create(session_id, transport="browser")
+    if session_id is None:
+        # Without an id every turn is a stranger: no memory, and verification cannot
+        # survive to the next turn. The transcript backfill below keeps the conversation
+        # coherent, but the fix is in the ElevenLabs agent config — see docs/elevenlabs-setup.md.
+        log.warning(
+            "Voice turn arrived without any session or conversation id; "
+            "memory and verification will not persist across turns"
+        )
+    # A session the widget already opened keeps its transport; a call that reaches us only
+    # through the voice platform is a phone-style call.
+    session = store.get_or_create(session_id, transport="phone")
     if session.call_id is None:
         try:
             session.call_id = domain.start_call(session)["id"]
         except Exception:
             log.warning("Could not open call record", exc_info=True)
+
+    prior = _prior_turns(payload)
+    if prior:
+        try:
+            seed_history(session, prior)
+        except Exception:
+            log.warning("Could not seed history from platform transcript", exc_info=True)
 
     user_text = _last_user_message(payload)
     reply = run_turn(session, user_text)["reply"] if user_text.strip() else GREETING

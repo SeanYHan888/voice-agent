@@ -47,6 +47,29 @@ export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  // The voice widget dispatches `elevenlabs-convai:call` just before it connects, with a
+  // mutable session config. Stamp our session id on every channel the platform offers —
+  // user id, custom-LLM extra body, and a dynamic variable the agent's system prompt
+  // interpolates — so the voice turns land in the same LangGraph thread as the text ones.
+  // Without this every voice turn is a stranger and Maya re-asks what she already knows.
+  useEffect(() => {
+    if (!AGENT_ID || !sessionId) return;
+    const widget = document.getElementById("voice-widget");
+    if (!widget) return;
+    const stamp = (event: Event) => {
+      const config = (event as CustomEvent<{ config: Record<string, unknown> }>).detail?.config;
+      if (!config) return;
+      config.userId = sessionId;
+      config.customLlmExtraBody = { session_id: sessionId };
+      config.dynamicVariables = {
+        ...((config.dynamicVariables as Record<string, unknown> | undefined) ?? {}),
+        session_id: sessionId,
+      };
+    };
+    widget.addEventListener("elevenlabs-convai:call", stamp);
+    return () => widget.removeEventListener("elevenlabs-convai:call", stamp);
+  }, [sessionId]);
+
   async function send() {
     const text = draft.trim();
     if (!text || !sessionId || busy) return;
@@ -164,7 +187,12 @@ export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
         // OpenAI-compatible endpoint for every turn.
         <div id="voice" className="border-t px-3 py-2">
           {/* @ts-expect-error custom element provided by the ElevenLabs widget script */}
-          <elevenlabs-convai agent-id={AGENT_ID} user-id={sessionId} />
+          <elevenlabs-convai
+            id="voice-widget"
+            agent-id={AGENT_ID}
+            user-id={sessionId}
+            dynamic-variables={JSON.stringify({ session_id: sessionId })}
+          />
         </div>
       )}
     </div>

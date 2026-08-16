@@ -243,3 +243,23 @@ def run_turn(session: CallSession, user_text: str) -> dict:
 def transcript_of(session: CallSession) -> list[BaseMessage]:
     state = get_graph().get_state({"configurable": {"thread_id": session.id}})
     return state.values.get("messages", []) if state else []
+
+
+def seed_history(session: CallSession, prior: list[BaseMessage]) -> bool:
+    """Backfill a conversation the voice platform remembers but we don't.
+
+    ElevenLabs sends the whole transcript with every turn. Normally we ignore it — our
+    checkpoint is the record, tool calls included — but if a turn arrives for a session
+    with no checkpoint, the platform's transcript is the only memory there is. Without it
+    Maya greets every turn as if it were the first, and a caller who has already said
+    "I'm an existing patient" gets asked again. Returns True if anything was written."""
+    if not prior:
+        return False
+    if transcript_of(session):
+        return False
+    config = {"configurable": {"thread_id": session.id}}
+    # Attribute the backfill to the last node in the graph so the next turn starts from
+    # START rather than resuming mid-workflow.
+    get_graph().update_state(config, {"messages": prior, "guard": None}, as_node="output_guard")
+    log.info("Seeded %d prior messages into session %s from the platform transcript", len(prior), session.id)
+    return True

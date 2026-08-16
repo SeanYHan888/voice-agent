@@ -25,6 +25,8 @@ class CallSession:
     patient_first_name: str | None = None
     # Number a verification code was last sent to, so confirm_verification needs no repeat.
     pending_phone: str | None = None
+    # Set when this call created the patient record: they're verified, but a first visit.
+    registered_this_call: bool = False
     created_at: float = field(default_factory=time.time)
 
     @property

@@ -44,12 +44,18 @@ def _speakable(moment: datetime) -> str:
 
 @tool
 def find_appointment_times(
-    visit_type: str = "New Patient",
+    visit_type: str | None = None,
     day: str | None = None,
     provider_name: str | None = None,
 ) -> str:
     """Find open appointment times. visit_type is "New Patient" (30 min, first visit) or
-    "Follow-up" (15 min, existing patients). day is an optional YYYY-MM-DD date."""
+    "Follow-up" (15 min, returning patients). Leave it out and it follows from who is on
+    the line: a verified patient gets Follow-up times, anyone else New Patient times.
+    day is an optional YYYY-MM-DD date."""
+    if not visit_type:
+        current = session()
+        returning = current.is_verified and not current.registered_this_call
+        visit_type = "Follow-up" if returning else "New Patient"
     try:
         slots = domain.search_slots(visit_type=visit_type, on=day, limit=60)
     except DomainError as e:
@@ -138,7 +144,11 @@ def register_new_patient(first_name: str, last_name: str, date_of_birth: str, ph
 
     current.patient_id = patient["id"]
     current.patient_first_name = patient["first_name"]
-    return f"Registered {patient['first_name']} and verified this session. You may now book."
+    current.registered_this_call = True
+    return (
+        f"Registered {patient['first_name']} and verified this session. Tell them their record "
+        "is set up, then find New Patient times."
+    )
 
 
 @tool

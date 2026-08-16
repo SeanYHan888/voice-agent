@@ -153,16 +153,22 @@ class Conversation:
 def seed_appointment(admin: str, phone: str, when: str) -> None:
     """Give the caller something to cancel or move. 'soon' lands inside the 24h policy
     window, 'far' outside it."""
-    _, slots = http("GET", f"{BASE}/api/domain/slots?limit=200")
     now = datetime.now(timezone.utc)
     if when == "soon":
+        _, slots = http("GET", f"{BASE}/api/domain/slots?limit=200")
         candidates = [
             s for s in slots if datetime.fromisoformat(s["starts_at"]) - now < timedelta(hours=24)
         ]
     else:
-        candidates = [
-            s for s in slots if datetime.fromisoformat(s["starts_at"]) - now > timedelta(days=3)
-        ]
+        # The soonest 200 open slots can all sit inside three days, so ask for a specific
+        # day instead of paging; step forward past weekends until something is open.
+        candidates = []
+        for offset in range(4, 11):
+            day = (now + timedelta(days=offset)).date().isoformat()
+            _, slots = http("GET", f"{BASE}/api/domain/slots?on={day}&limit=50")
+            if slots:
+                candidates = slots
+                break
     if not candidates:
         raise RuntimeError(f"no {when} slots available to seed an appointment")
 
