@@ -75,19 +75,6 @@ def seed(db: Session) -> None:
     today = datetime.now(timezone.utc).date()
     slots: list[Slot] = []
 
-    # A few same-day/next-day slots pinned relative to *now*, so something is always
-    # bookable within 24 hours no matter what hour or weekday the seed runs. The 24h
-    # approval policy (and its demo, and its tests) depends on near-term slots existing.
-    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    for provider, hours_ahead in zip(providers, [3, 6, 12, 20]):
-        slots.append(
-            Slot(
-                provider_id=provider.id,
-                visit_type_id=follow_up.id,
-                starts_at=now + timedelta(hours=hours_ahead),
-            )
-        )
-
     # Weekday slots for the next 14 days: mornings New Patient, afternoons Follow-up
     for day_offset in range(1, 15):
         day = today + timedelta(days=day_offset)
@@ -110,6 +97,20 @@ def seed(db: Session) -> None:
                         starts_at=datetime.combine(day, time(hour, minute), tzinfo=timezone.utc),
                     )
                 )
+
+    # A few same-day/next-day slots pinned relative to *now*, so something is always
+    # bookable within 24 hours no matter what hour or weekday the seed runs. The 24h
+    # approval policy (and its demo, and its tests) depends on near-term slots existing.
+    # (provider_id, starts_at) is unique, so skip any that already fall on the grid —
+    # e.g. seeding at 17:00 UTC puts "+20h" exactly on tomorrow's 13:00 follow-up slot.
+    taken = {(s.provider_id, s.starts_at) for s in slots}
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    for provider, hours_ahead in zip(providers, [3, 6, 12, 20]):
+        starts_at = now + timedelta(hours=hours_ahead)
+        if (provider.id, starts_at) in taken:
+            continue
+        slots.append(Slot(provider_id=provider.id, visit_type_id=follow_up.id, starts_at=starts_at))
+
     db.add_all(slots)
 
     db.add_all([FaqChunk(title=t, text=x) for t, x in FAQS])
