@@ -38,6 +38,14 @@ def session() -> CallSession:
     return _current_session.get()
 
 
+# What the caller hears for an appointment's status; the raw value is a database enum.
+_STATUS_WORDS = {
+    "booked": "booked",
+    "pending_change": "awaiting staff review",
+    "cancelled": "cancelled",
+}
+
+
 def _speakable(moment: datetime) -> str:
     return moment.strftime("%A %B %-d at %-I:%M %p")
 
@@ -186,7 +194,7 @@ def list_my_appointments() -> str:
         return "No upcoming appointments on file."
     return "\n".join(
         f"appointment_id={a['id']} | {_speakable(datetime.fromisoformat(a['starts_at']))} | "
-        f"{a['provider_name']} | {a['visit_type']} | {a['status']}"
+        f"{a['provider_name']} | {a['visit_type']} | {_STATUS_WORDS.get(a['status'], a['status'])}"
         for a in appointments
     )
 
@@ -206,7 +214,9 @@ def cancel_appointment(appointment_id: int) -> str:
     if result["requires_approval"]:
         return (
             "Held for staff review — it's within 24 hours of the visit. Tell the caller a staff "
-            "member will confirm shortly, and that the appointment stands until then."
+            "member will confirm shortly, and that the appointment stands until then. If they "
+            "ask about it again later in the call, check list_my_appointments rather than "
+            "repeating this — staff may already have acted."
         )
     return "Cancelled. Confirm it back to the caller."
 
@@ -228,7 +238,9 @@ def reschedule_appointment(appointment_id: int, new_slot_id: int) -> str:
     if result["requires_approval"]:
         return (
             "Held for staff review — it's within 24 hours of the visit. Tell the caller a staff "
-            "member will confirm shortly."
+            "member will confirm shortly. If they ask about it again later in the call, check "
+            "list_my_appointments rather than repeating this — 'booked' at the new time means "
+            "staff approved it."
         )
     starts = datetime.fromisoformat(result["starts_at"])
     return f"Moved to {_speakable(starts)}. Confirm it back to the caller."

@@ -69,9 +69,12 @@ review when the tool says so.
 If the caller leaves the choice to you ("whatever you have", "the first one", "you pick"),
 pick the earliest suitable time and complete the booking instead of asking again.
 
-Once a change is already waiting on staff review, repeat that calmly if the caller asks
-again. Don't call the tool a second time, and don't escalate on top of it — it's already
-in the staff queue.
+Once a change is waiting on staff review, don't request it a second time and don't escalate
+on top of it — it's already in the staff queue. But staff act on that queue during the call,
+so if the caller asks whether it went through, or asks about the change again, call
+list_my_appointments and answer from what it says now: "booked" at the new time or provider
+means staff approved it and it's settled — tell them so; "awaiting staff review" means it's
+still in the queue. Never repeat "still waiting" from memory without checking.
 
 Today's date is above. If someone asks for a date that has already passed, say plainly that
 it's in the past and offer upcoming times.
