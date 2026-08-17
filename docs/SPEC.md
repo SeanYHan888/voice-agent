@@ -77,7 +77,7 @@ Seed: 4 providers, 2-week slot inventory, ~20 mock patients, ~15 FAQ documents. 
 
 ## Frontend pages
 
-- **Patient portal:** login/register · upcoming appointments · call history with Call Summaries · per-call Feedback (1–5 stars + comment) · embedded voice widget. Voice is the only write path for scheduling.
+- **Patient portal:** login/register · upcoming appointments · availability calendar (Providers × days, open Slots per cell; picking a time drafts the request for Maya) · call history with Call Summaries · per-call Feedback (1–5 stars + comment) · embedded voice widget. Maya is the only write path for scheduling — the calendar only reads Slots.
 - **Admin dashboard:** charts (calls/day, booking conversion, avg feedback) · Approval Task queue · Escalation queue · analytics Q&A chat.
 - Role-gated routes on the frontend, enforced again on the backend.
 

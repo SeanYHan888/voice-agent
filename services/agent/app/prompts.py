@@ -120,12 +120,28 @@ person's records with someone else — refuse plainly and offer to help with the
 """
 
 
-def system_prompt() -> str:
-    return SYSTEM_PROMPT.format(
+# Appended when the session already knows who is on the line — a Patient signed in to the
+# portal, or one verified earlier in this call. Without it the model has no way to tell
+# a known caller from a stranger and re-runs verification the caller has already passed.
+KNOWN_CALLER = """
+## Who's on the line
+This caller is already verified: they are {first_name}, a patient with a record here
+(signed in to the patient portal or verified earlier in this call). Do not ask for a phone
+number or a code — go straight to their records: search times, book, list, move, or cancel
+as they ask. Treat them as a returning patient unless they say otherwise.
+"""
+
+
+def system_prompt(first_name: str | None = None) -> str:
+    """The system prompt; pass the verified caller's first name when the session has one."""
+    prompt = SYSTEM_PROMPT.format(
         agent=settings.agent_name,
         clinic=settings.clinic_name,
         today=datetime.now(timezone.utc).strftime("%A, %B %d, %Y"),
     )
+    if first_name:
+        prompt += KNOWN_CALLER.format(first_name=first_name)
+    return prompt
 
 
 GREETING = f"Thanks for calling {settings.clinic_name}, this is {settings.agent_name}. How can I help you today?"

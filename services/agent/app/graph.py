@@ -109,9 +109,22 @@ def input_guard(state: AgentState) -> dict:
     return {"messages": [AIMessage(content=verdict.reply)], "guard": verdict.kind}
 
 
+def _known_caller() -> str | None:
+    """First name of the verified patient on this session, if any."""
+    from .tools import session as current_session
+
+    try:
+        current = current_session()
+    except LookupError:
+        return None
+    if not current.is_verified:
+        return None
+    return current.patient_first_name or "a patient we have verified"
+
+
 def reason(state: AgentState) -> dict:
     global _llm, _reasoning_effort
-    messages = [SystemMessage(content=system_prompt()), *state["messages"]]
+    messages = [SystemMessage(content=system_prompt(_known_caller())), *state["messages"]]
     try:
         return {"messages": [_get_llm().invoke(messages)]}
     except Exception as e:

@@ -28,6 +28,16 @@ def _appointment_out(appt: Appointment, **extra) -> AppointmentOut:
     )
 
 
+def _slot_out(s: Slot) -> SlotOut:
+    return SlotOut(
+        id=s.id,
+        provider_id=s.provider_id,
+        provider_name=s.provider.name,
+        visit_type=s.visit_type.name,
+        starts_at=s.starts_at,
+    )
+
+
 def _within_approval_window(starts_at: datetime) -> bool:
     return starts_at - datetime.now(timezone.utc) < APPROVAL_WINDOW
 
@@ -63,16 +73,35 @@ def slots(
     if provider_id is not None:
         q = q.where(Slot.provider_id == provider_id)
 
-    return [
-        SlotOut(
-            id=s.id,
-            provider_id=s.provider_id,
-            provider_name=s.provider.name,
-            visit_type=s.visit_type.name,
-            starts_at=s.starts_at,
+    return [_slot_out(s) for s in db.scalars(q).all()]
+
+
+@router.get("/slots/calendar", response_model=list[SlotOut])
+def slots_calendar(
+    start: date = Query(description="First day of the window (UTC)"),
+    days: int = Query(default=7, ge=1, le=14),
+    visit_type: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Every open slot in a short window, for the portal's availability calendar.
+    Unlike /slots this is bounded by the window rather than a row limit, so a
+    whole week of every provider comes back in one request. Public, like /slots."""
+    now = datetime.now(timezone.utc)
+    window_start = datetime.combine(start, time.min, tzinfo=timezone.utc)
+    q = (
+        select(Slot)
+        .join(VisitType)
+        .where(
+            Slot.status == "open",
+            Slot.starts_at > now,
+            Slot.starts_at >= window_start,
+            Slot.starts_at < window_start + timedelta(days=days),
         )
-        for s in db.scalars(q).all()
-    ]
+        .order_by(Slot.starts_at)
+    )
+    if visit_type is not None:
+        q = q.where(VisitType.name == visit_type)
+    return [_slot_out(s) for s in db.scalars(q).all()]
 
 
 @router.post("/appointments", response_model=AppointmentOut, status_code=201)

@@ -78,6 +78,20 @@ export type Appointment = {
   requires_approval?: boolean;
 };
 
+export type Provider = {
+  id: number;
+  name: string;
+  title: string;
+};
+
+export type Slot = {
+  id: number;
+  provider_id: number;
+  provider_name: string;
+  visit_type: string;
+  starts_at: string;
+};
+
 export type Call = {
   id: number;
   transport: string;

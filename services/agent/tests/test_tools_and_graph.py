@@ -267,6 +267,17 @@ def test_history_persists_between_turns_of_one_session(fake_domain, scripted_llm
     assert len(transcript_of(s)) == 4
 
 
+def test_model_is_told_when_the_caller_is_already_verified(fake_domain, scripted_llm):
+    # A portal patient (or one verified earlier in the call) must not be asked to verify
+    # again — the model can only skip that step if the prompt says who is on the line.
+    scripted_llm.say("Sure.").say("Sure.")
+    run_turn(verified(fake_domain), "book me something")
+    run_turn(new_session(), "book me something")
+    known, stranger = (c[0].content for c in scripted_llm.calls)
+    assert "already verified" in known and "Noah" in known
+    assert "already verified" not in stranger
+
+
 def test_two_sessions_do_not_share_history(fake_domain, scripted_llm):
     a, b = new_session(), new_session()
     scripted_llm.say("a1").say("b1")

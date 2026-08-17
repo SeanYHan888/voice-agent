@@ -6,17 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Empty, ErrorNote, Loading } from "@/components/States";
-import { MayaPanel } from "@/components/MayaPanel";
-import { api, ApiError, type Appointment, type Patient } from "@/lib/api";
+import { AvailabilityCalendar } from "@/components/AvailabilityCalendar";
+import { MayaPanel, type Suggestion } from "@/components/MayaPanel";
+import { api, ApiError, type Appointment, type Patient, type Slot } from "@/lib/api";
+import { formatClinicDay, formatClinicTime, formatClinicWhen } from "@/lib/clinicTime";
 
-function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+/** The sentence a Patient would say to Maya to claim a Slot picked on the calendar. */
+function bookingRequest(slot: Slot) {
+  return `Please book the ${slot.visit_type} visit with ${slot.provider_name} on ${formatClinicDay(
+    slot.starts_at,
+  )} at ${formatClinicTime(slot.starts_at)}.`;
 }
 
 /** Until an account is linked to a clinic record, there is nothing to show. */
@@ -83,15 +82,19 @@ export function PatientHome() {
   const [loading, setLoading] = useState(true);
   const [needsLink, setNeedsLink] = useState(false);
   const [error, setError] = useState("");
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const [scheduleVersion, setScheduleVersion] = useState(0);
 
+  // Refreshes (after Maya books, moves, or cancels) update in place: swapping the page
+  // for the loader would unmount Maya's panel — and her conversation with it.
   const load = useCallback(async () => {
-    setLoading(true);
     setError("");
     try {
       const me = await api.get<Patient>("/domain/patients/me");
       setPatient(me);
       setNeedsLink(false);
       setAppointments(await api.get<Appointment[]>("/domain/appointments/me"));
+      setScheduleVersion((v) => v + 1);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) setNeedsLink(true);
       else setError(e instanceof Error ? e.message : "Could not load your visits");
@@ -104,12 +107,12 @@ export function PatientHome() {
     load();
   }, [load]);
 
-  if (loading) return <Loading label="Loading your visits…" />;
+  if (loading && !patient) return <Loading label="Loading your visits…" />;
   if (needsLink) return <ClaimRecord onLinked={load} />;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_24rem]">
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
             Hello{patient ? `, ${patient.first_name}` : ""}
@@ -136,7 +139,7 @@ export function PatientHome() {
                   className="flex items-center justify-between rounded-lg border px-4 py-3"
                 >
                   <div>
-                    <p className="font-medium">{formatWhen(appointment.starts_at)}</p>
+                    <p className="font-medium">{formatClinicWhen(appointment.starts_at)}</p>
                     <p className="text-sm text-muted-foreground">
                       {appointment.visit_type} · {appointment.provider_name}
                     </p>
@@ -149,9 +152,16 @@ export function PatientHome() {
             )}
           </CardContent>
         </Card>
+
+        <AvailabilityCalendar
+          refreshKey={scheduleVersion}
+          onPickSlot={(slot) =>
+            setSuggestion({ text: bookingRequest(slot), nonce: Date.now() })
+          }
+        />
       </div>
 
-      <MayaPanel onCallChanged={load} />
+      <MayaPanel onCallChanged={load} suggestion={suggestion} />
     </div>
   );
 }

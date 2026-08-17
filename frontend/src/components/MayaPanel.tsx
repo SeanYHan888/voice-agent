@@ -20,13 +20,31 @@ const AGENT_ID = import.meta.env.VITE_ELEVENLABS_AGENT_ID as string | undefined;
  * agent is configured, the same session is also reachable by voice — both drive the
  * identical LangGraph workflow on the agent service.
  */
-export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
+export type Suggestion = { text: string; nonce: number };
+
+export function MayaPanel({
+  onCallChanged,
+  suggestion,
+}: {
+  onCallChanged?: () => void;
+  /** A request written elsewhere on the page (e.g. a picked slot). Lands in the
+   * draft box for the Patient to send, so nothing goes to Maya unread. */
+  suggestion?: Suggestion | null;
+}) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [verified, setVerified] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!suggestion) return;
+    setDraft(suggestion.text);
+    inputRef.current?.focus();
+    inputRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [suggestion]);
 
   useEffect(() => {
     api
@@ -169,6 +187,7 @@ export function MayaPanel({ onCallChanged }: { onCallChanged?: () => void }) {
         }}
       >
         <Input
+          ref={inputRef}
           value={draft}
           disabled={!sessionId || busy}
           placeholder="Ask about hours, or book a visit…"
