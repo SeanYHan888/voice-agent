@@ -132,3 +132,26 @@ def test_summariser_survives_non_object_json(fake_domain, scripted_llm, monkeypa
 
     monkeypatch.setattr(summarizer, "ChatOpenAI", ListLLM)
     assert summarizer.summarise(s) is None
+
+
+def test_list_providers_is_public_and_names_everyone(fake_domain):
+    out = tool_result(store.create(), "list_providers")  # unverified caller, still allowed
+    assert "Dr. Elena Vasquez — Dermatologist" in out and "Dr. Marcus Chen" in out and "Pediatric" in out
+    assert "find_appointment_times" in out  # points the model at the next step
+
+
+def test_switch_doctor_flow_end_to_end(fake_domain, scripted_llm):
+    """List my visits → who are the doctors → Dr. Chen's times → move it."""
+    from app.graph import run_turn
+
+    s = verified(fake_domain)
+    tool_result(s, "book_appointment", slot_id=12)  # Dr. Shah, three days out
+    scripted_llm.call("list_my_appointments").call("list_providers").say("You're with Dr. Shah; we also have Dr. Vasquez and Dr. Chen. Who would you like?")
+    turn = run_turn(s, "I want to switch to a different doctor — who do you have?")
+    assert turn["tools_called"] == ["list_my_appointments", "list_providers"]
+    assert "Dr. Chen" in turn["reply"]
+
+    scripted_llm.call("find_appointment_times", provider_name="Dr. Chen").call("reschedule_appointment", appointment_id=1, new_slot_id=11).say("Done — Wednesday at 1 PM with Dr. Chen.")
+    turn = run_turn(s, "Dr. Chen please, first thing you have")
+    assert turn["tools_called"] == ["find_appointment_times", "reschedule_appointment"]
+    assert fake_domain.appointments[1]["provider_name"] == "Dr. Marcus Chen"

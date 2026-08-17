@@ -78,6 +78,12 @@ class FakeDomain:
         params = kwargs.get("params") or {}
         patient_id = claims.get("patient_id")
 
+        if method == "GET" and path == "/providers":
+            return [
+                {"id": 1, "name": "Dr. Elena Vasquez", "title": "Dermatologist"},
+                {"id": 2, "name": "Dr. Marcus Chen", "title": "Dermatologist"},
+                {"id": 3, "name": "Dr. Priya Shah", "title": "Pediatric Dermatologist"},
+            ]
         if method == "GET" and path == "/slots":
             return [
                 s

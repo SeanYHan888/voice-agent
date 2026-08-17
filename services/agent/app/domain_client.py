@@ -39,6 +39,10 @@ def _request(method: str, path: str, session: CallSession | None = None, **kwarg
     return response.json() if response.content else {}
 
 
+def providers() -> list[dict]:
+    return _request("GET", "/providers")
+
+
 def search_slots(**params) -> list[dict]:
     clean = {k: v for k, v in params.items() if v is not None}
     return _request("GET", "/slots", params=clean)

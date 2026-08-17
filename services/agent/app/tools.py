@@ -90,6 +90,23 @@ PHONE_PROBLEM = (
 
 
 @tool
+def list_providers() -> str:
+    """The clinic's doctors, with what each one does. Use this when a caller asks who
+    the doctors are, wants a particular kind of specialist, or wants to switch to a
+    different doctor — never name providers from memory."""
+    try:
+        providers = domain.providers()
+    except DomainError as e:
+        return f"Couldn't reach the provider list ({e.message}). Offer to try again in a moment."
+    if not providers:
+        return "No providers are listed."
+    return "Our providers:\n" + "\n".join(f"{p['name']} — {p['title']}" for p in providers) + (
+        "\nTo book or move a visit with one of them, call find_appointment_times with "
+        "provider_name set to that name."
+    )
+
+
+@tool
 def find_appointment_times(
     visit_type: str | None = None,
     day: str | None = None,
@@ -358,6 +375,7 @@ def transfer_to_staff(reason: str, detail: str | None = None) -> str:
 
 
 ALL_TOOLS = [
+    list_providers,
     find_appointment_times,
     start_verification,
     finish_verification,
