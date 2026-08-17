@@ -10,6 +10,7 @@ import hmac
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 
@@ -48,6 +49,29 @@ def healthz():
     return {"ok": True, "service": "agent"}
 
 
+SWEEP_INTERVAL_SECONDS = 60
+
+
+def sweep_idle_sessions() -> None:
+    """Close the calls nobody ended explicitly — a hang-up in the voice widget, a closed
+    tab. Runs on a timer, so a call doesn't sit "in progress" until the next visitor."""
+    for expired in store.prune():
+        if expired.call_id is not None:
+            try:
+                summarise(expired)
+            except Exception:
+                log.exception("Wrap-up failed for idle session %s", expired.id)
+
+
+def _sweep_forever() -> None:
+    while True:
+        time.sleep(SWEEP_INTERVAL_SECONDS)
+        try:
+            sweep_idle_sessions()
+        except Exception:
+            log.exception("Idle sweep failed")
+
+
 @app.on_event("startup")
 def warm_graph() -> None:
     try:
@@ -55,6 +79,7 @@ def warm_graph() -> None:
         log.info("LangGraph workflow compiled")
     except Exception:
         log.exception("Graph compilation failed at startup")
+    threading.Thread(target=_sweep_forever, name="idle-sweep", daemon=True).start()
 
 
 def _patient_from_portal_token(authorization: str) -> int | None:
@@ -123,11 +148,8 @@ def start_session(body: SessionStartIn, authorization: str = Header(default=""))
         except Exception:
             log.warning("Could not load patient name", exc_info=True)
 
-    try:
-        session.call_id = domain.start_call(session)["id"]
-    except Exception:
-        log.exception("Could not open call record")
-
+    # The Call record opens on the first turn (_ensure_call), not on page load: a widget
+    # that was rendered but never spoken to is not a call.
     greeting = GREETING
     if session.patient_first_name:
         greeting = (

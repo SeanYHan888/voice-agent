@@ -4,7 +4,7 @@ import time
 
 from app import graph, main
 from app.main import _extract_session_id, _last_user_message
-from app.session import SESSION_TTL_SECONDS, store
+from app.session import CALL_IDLE_SECONDS, SESSION_TTL_SECONDS, store
 
 from .conftest import EL_HEADERS, NOAH_PHONE, voice_payload
 
@@ -60,7 +60,7 @@ def test_idle_sessions_are_pruned_and_summarised(client, fake_domain, scripted_l
     scripted_llm.say("Hi.").say("Hi again.")
     client.post("/chat", json={"session_id": "idle-session-000001", "message": "hello"})
     idle = store.get("idle-session-000001")
-    idle.last_seen -= SESSION_TTL_SECONDS + 1
+    idle.last_seen -= CALL_IDLE_SECONDS + 1
     summarised = []
     monkeypatch.setattr(main, "summarise", lambda s: summarised.append(s.id))
     client.post("/chat", json={"session_id": "busy-session-000001", "message": "hello"})
@@ -110,3 +110,36 @@ def test_concurrent_turns_on_one_session_are_serialised(client, fake_domain, scr
     history = [m.content for m in graph.transcript_of(store.get("barge-session-0001")) if m.type == "human"]
     assert sorted(history) == ["first", "second"]
     assert len(fake_domain.calls) == 1  # one call record, not one per racing turn
+
+
+def test_session_start_does_not_open_a_call_until_someone_speaks(client, fake_domain, scripted_llm):
+    """Loading the page is not a call. Six 'in progress' rows came from six page loads."""
+    r = client.post("/session", json={"transport": "browser"})
+    assert r.status_code == 200 and r.json()["call_id"] is None
+    assert fake_domain.calls == []
+    scripted_llm.say("Hi!")
+    client.post("/chat", json={"session_id": r.json()["session_id"], "message": "hello"})
+    assert len(fake_domain.calls) == 1
+    assert store.get(r.json()["session_id"]).call_id == fake_domain.calls[0]["id"]
+
+
+def test_wrapup_of_a_session_that_never_spoke_is_a_quiet_no_op(client, fake_domain, monkeypatch):
+    r = client.post("/session", json={"transport": "browser"})
+    calls = []
+    monkeypatch.setattr(main, "summarise", lambda s: calls.append(s.call_id))
+    assert client.post(f"/calls/{r.json()['session_id']}/wrapup").status_code == 200
+    assert calls == [None]  # summarise() itself returns early on call_id None
+
+
+def test_background_sweep_closes_idle_calls_without_waiting_for_traffic(client, fake_domain, scripted_llm, monkeypatch):
+    scripted_llm.say("Hi.")
+    client.post("/chat", json={"session_id": "hung-up-session-01", "message": "hello"})
+    store.get("hung-up-session-01").last_seen -= CALL_IDLE_SECONDS + 1
+    summarised = []
+    monkeypatch.setattr(main, "summarise", lambda s: summarised.append(s.id))
+    main.sweep_idle_sessions()  # what the timer thread calls every minute
+    assert summarised == ["hung-up-session-01"] and store.get("hung-up-session-01") is None
+
+
+def test_call_idle_ttl_is_shorter_than_token_life():
+    assert CALL_IDLE_SECONDS < SESSION_TTL_SECONDS

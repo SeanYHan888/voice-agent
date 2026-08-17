@@ -18,8 +18,11 @@ import jwt
 
 from .config import settings
 
-# Idle time after which a call is considered over. Refreshed on every turn.
+# How long a session's signed token is good for.
 SESSION_TTL_SECONDS = 60 * 60
+# Silence after which a call is over: the caller hung up, closed the tab, or walked away.
+# Its identity survives in the checkpoint, so a session that resumes later loses nothing.
+CALL_IDLE_SECONDS = 15 * 60
 
 # The facts worth carrying across a restart. Everything else is derivable or per-turn.
 IDENTITY_FIELDS = (
@@ -113,7 +116,7 @@ class SessionStore:
     def prune(self) -> list[CallSession]:
         """Drop sessions idle past the TTL and return them, so the caller can wrap up the
         calls that never got an explicit end (a phone hang-up, a closed tab)."""
-        cutoff = time.time() - SESSION_TTL_SECONDS
+        cutoff = time.time() - CALL_IDLE_SECONDS
         with self._guard:
             expired = [s for s in self._sessions.values() if s.last_seen < cutoff]
             for s in expired:
