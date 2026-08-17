@@ -7,7 +7,8 @@ than raised, so the model can apologise and recover instead of the turn collapsi
 """
 import contextvars
 import logging
-from datetime import datetime
+import re
+from datetime import date, datetime
 
 from langchain_core.tools import tool
 
@@ -50,6 +51,44 @@ def _speakable(moment: datetime) -> str:
     return moment.strftime("%A %B %-d at %-I:%M %p")
 
 
+_VISIT_TYPES = {"followup": "Follow-up", "newpatient": "New Patient"}
+
+
+def _visit_type(raw: str | None) -> str | None:
+    """"follow up", "FOLLOW-UP", "new patient" → the exact names the domain filters on."""
+    if not raw:
+        return None
+    return _VISIT_TYPES.get(re.sub(r"[^a-z]", "", raw.lower()), raw)
+
+
+def _iso_date(raw: str | None) -> str | None:
+    """A YYYY-MM-DD string, or None if it isn't one. The model must resolve "tomorrow"
+    itself (today's date is in the prompt); the domain returns a 422 for anything else."""
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw.strip()).isoformat()
+    except ValueError:
+        return None
+
+
+def _e164(raw: str) -> str | None:
+    """+1XXXXXXXXXX from however the number was spoken, or None if it isn't a full
+    ten-digit North American number. Same rule as the domain's normalize_phone."""
+    digits = "".join(c for c in raw if c.isdigit())
+    if len(digits) == 10:
+        digits = f"1{digits}"
+    if len(digits) != 11 or not digits.startswith("1"):
+        return None
+    return f"+{digits}"
+
+
+PHONE_PROBLEM = (
+    "That isn't a full ten-digit phone number. Ask the caller for the whole number, "
+    "area code first."
+)
+
+
 @tool
 def find_appointment_times(
     visit_type: str | None = None,
@@ -60,18 +99,31 @@ def find_appointment_times(
     "Follow-up" (15 min, returning patients). Leave it out and it follows from who is on
     the line: a verified patient gets Follow-up times, anyone else New Patient times.
     day is an optional YYYY-MM-DD date."""
+    visit_type = _visit_type(visit_type)
     if not visit_type:
         current = session()
         returning = current.is_verified and not current.registered_this_call
         visit_type = "Follow-up" if returning else "New Patient"
+    if day and not (day := _iso_date(day)):
+        return "day must be a YYYY-MM-DD date — work it out from today's date in your instructions and call again."
     try:
         slots = domain.search_slots(visit_type=visit_type, on=day, limit=60)
     except DomainError as e:
         return f"Couldn't reach the schedule ({e.message}). Offer to try again in a moment."
 
+    preface = ""
     if provider_name:
-        wanted = provider_name.lower().replace("dr.", "").strip()
-        slots = [s for s in slots if wanted in s["provider_name"].lower()] or slots
+        wanted = re.sub(r"^(dr\.?|doctor)\s*", "", provider_name.lower().strip()).strip()
+        with_provider = [s for s in slots if wanted in s["provider_name"].lower()]
+        if with_provider:
+            slots = with_provider
+        elif slots:
+            # Don't silently widen: the caller asked for someone specific, and Maya must
+            # say so before offering another doctor's times.
+            preface = (
+                f"No open {visit_type} times with {provider_name} on that day. Tell the "
+                "caller so, then offer these with other providers if they'd like:\n"
+            )
 
     if not slots:
         return "No open times matched. Suggest a different day or visit type."
@@ -82,7 +134,7 @@ def find_appointment_times(
         lines.append(
             f"slot_id={slot['id']} | {_speakable(starts)} | {slot['provider_name']} | {slot['visit_type']}"
         )
-    return "Open times:\n" + "\n".join(lines) + "\nOffer two or three of these out loud, not all of them."
+    return preface + "Open times:\n" + "\n".join(lines) + "\nOffer two or three of these out loud, not all of them."
 
 
 @tool
@@ -90,10 +142,9 @@ def start_verification(phone: str) -> str:
     """Send a one-time code to the phone number on the patient's file. Use this before
     any action on a patient's records. phone should be digits, e.g. 5550100101."""
     current = session()
-    digits = "".join(c for c in phone if c.isdigit())
-    if len(digits) == 10:
-        digits = f"1{digits}"
-    normalised = f"+{digits}"
+    normalised = _e164(phone)
+    if normalised is None:
+        return PHONE_PROBLEM
 
     try:
         result = domain.request_verification(current, normalised)
@@ -116,8 +167,17 @@ def finish_verification(code: str) -> str:
     if not current.pending_phone:
         return "No code has been sent yet — call start_verification first."
 
+    # Speech-to-text renders a read-back code as "1 2 3 4 5 6" or "123-456" as often as
+    # "123456"; the code is the digits, whatever came between them.
+    digits = "".join(c for c in code if c.isdigit())
+    if len(digits) != 6:
+        return (
+            f"That doesn't look like a six-digit code (heard {code!r}). Ask the caller to "
+            "read the six digits again, one at a time."
+        )
+
     try:
-        result = domain.confirm_verification(current, current.pending_phone, code)
+        result = domain.confirm_verification(current, current.pending_phone, digits)
     except DomainError as e:
         return f"Verification service problem: {e.message}"
 
@@ -133,17 +193,20 @@ def finish_verification(code: str) -> str:
 def register_new_patient(first_name: str, last_name: str, date_of_birth: str, phone: str) -> str:
     """Create a record for a first-time caller. date_of_birth must be YYYY-MM-DD."""
     current = session()
-    digits = "".join(c for c in phone if c.isdigit())
-    if len(digits) == 10:
-        digits = f"1{digits}"
+    normalised = _e164(phone)
+    if normalised is None:
+        return PHONE_PROBLEM
+    dob = _iso_date(date_of_birth)
+    if dob is None:
+        return "date_of_birth must be YYYY-MM-DD. Confirm the caller's date of birth and call again."
 
     try:
         patient = domain.register_patient(
             current,
             first_name=first_name,
             last_name=last_name,
-            dob=date_of_birth,
-            phone=f"+{digits}",
+            dob=dob,
+            phone=normalised,
         )
     except DomainError as e:
         if e.status == 409:
@@ -190,6 +253,7 @@ def list_my_appointments() -> str:
         appointments = domain.my_appointments(current)
     except DomainError as e:
         return f"Couldn't read the schedule: {e.message}"
+    appointments = [a for a in appointments if a["status"] != "cancelled"]
     if not appointments:
         return "No upcoming appointments on file."
     return "\n".join(
@@ -197,6 +261,19 @@ def list_my_appointments() -> str:
         f"{a['provider_name']} | {a['visit_type']} | {_STATUS_WORDS.get(a['status'], a['status'])}"
         for a in appointments
     )
+
+
+def _state_conflict(message: str) -> str:
+    """The domain refused because of the appointment's state, not the slot."""
+    if "pending_change" in message:
+        return (
+            "That appointment is already awaiting staff review for an earlier change. Don't "
+            "request another — tell the caller staff will confirm, and check "
+            "list_my_appointments if they ask again."
+        )
+    if "cancelled" in message:
+        return "That appointment was already cancelled. Offer to book a new one."
+    return f"Couldn't change it: {message}"
 
 
 @tool
@@ -210,6 +287,8 @@ def cancel_appointment(appointment_id: int) -> str:
     except DomainError as e:
         if e.status == 403:
             return "That appointment doesn't belong to this caller. Do not discuss its details."
+        if e.status == 409:
+            return _state_conflict(e.message)
         return f"Couldn't cancel: {e.message}"
     if result["requires_approval"]:
         return (
@@ -233,7 +312,9 @@ def reschedule_appointment(appointment_id: int, new_slot_id: int) -> str:
         if e.status == 403:
             return "That appointment doesn't belong to this caller. Do not discuss its details."
         if e.status == 409:
-            return f"{e.message}. Offer a different time."
+            if "taken" in e.message.lower():
+                return f"{e.message}. Offer a different time."
+            return _state_conflict(e.message)
         return f"Couldn't reschedule: {e.message}"
     if result["requires_approval"]:
         return (

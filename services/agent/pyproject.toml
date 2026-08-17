@@ -19,6 +19,9 @@ dependencies = [
     "psycopg[binary,pool]>=3.2",
 ]
 
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
 # The service is a plain package directory, not something to build or publish;
 # uv only needs it for its lockfile.
 [tool.uv]

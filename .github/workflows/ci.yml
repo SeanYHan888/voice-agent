@@ -21,6 +21,22 @@ jobs:
       - run: npm run build # tsc -b && vite build
         working-directory: frontend
 
+  agent-tests:
+    name: Agent pipeline unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12"
+      # Offline: the domain service and the model are faked in tests/conftest.py, so this
+      # covers session identity, the ElevenLabs adapter, tools, guardrails and the graph
+      # loop without keys or containers.
+      - run: uv sync --locked
+        working-directory: services/agent
+      - run: uv run --frozen pytest -q
+        working-directory: services/agent
+
   stack:
     name: Compose stack + smoke test
     runs-on: ubuntu-latest
@@ -65,7 +81,7 @@ jobs:
 
   deploy:
     name: Deploy to EC2
-    needs: [frontend, stack]
+    needs: [frontend, agent-tests, stack]
     # Dormant until the repo variable DEPLOY_ENABLED is set to 'true'
     # (Settings → Secrets and variables → Actions → Variables).
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'

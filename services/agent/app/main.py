@@ -20,10 +20,10 @@ from pydantic import BaseModel
 
 from . import domain_client as domain
 from .config import settings
-from .graph import get_graph, run_turn, seed_history
+from .graph import get_graph, restore_identity, run_turn, seed_history
 from .logging_middleware import RequestLogMiddleware
 from .prompts import GREETING
-from .session import store
+from .session import CallSession, store
 from .summarizer import summarise
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -86,6 +86,28 @@ def _patient_from_portal_token(authorization: str) -> int | None:
         return None
 
 
+def _resolve_session(session_id: str | None, transport: str, background: BackgroundTasks) -> CallSession:
+    """The session for this turn. A known id the store has forgotten (restart, second
+    replica) is rehydrated from its checkpoint rather than started over as a stranger.
+    Idle sessions are swept here too, and the calls they left open get their summary."""
+    for expired in store.prune():
+        if expired.call_id is not None:
+            background.add_task(summarise, expired)
+    session, created = store.get_or_create(session_id, transport=transport)
+    if created and session_id:
+        restore_identity(session)
+    session.touch()
+    return session
+
+
+def _ensure_call(session: CallSession) -> None:
+    if session.call_id is None:
+        try:
+            session.call_id = domain.start_call(session)["id"]
+        except Exception:
+            log.warning("Could not open call record", exc_info=True)
+
+
 @app.post("/session")
 def start_session(body: SessionStartIn, authorization: str = Header(default="")):
     """Open a call session. Called by the widget before connecting to the voice platform."""
@@ -121,14 +143,11 @@ def start_session(body: SessionStartIn, authorization: str = Header(default=""))
 
 
 @app.post("/chat")
-def chat(body: ChatIn):
-    session = store.get_or_create(body.session_id, transport=body.transport)
-    if session.call_id is None:
-        try:
-            session.call_id = domain.start_call(session)["id"]
-        except Exception:
-            log.warning("Could not open call record", exc_info=True)
-    turn = run_turn(session, body.message)
+def chat(body: ChatIn, background: BackgroundTasks):
+    session = _resolve_session(body.session_id, body.transport, background)
+    with store.lock_for(session.id):
+        _ensure_call(session)
+        turn = run_turn(session, body.message)
     return {
         "session_id": session.id,
         "reply": turn["reply"],
@@ -144,7 +163,11 @@ def wrapup(session_id: str, background: BackgroundTasks):
     """End the call and kick off the summary agent."""
     session = store.get(session_id)
     if session is None:
-        raise HTTPException(404, "Unknown session")
+        # Restarted since the call began: the checkpoint still knows the call.
+        session, _ = store.get_or_create(session_id)
+        if not restore_identity(session):
+            store.prune()
+            raise HTTPException(404, "Unknown session")
     background.add_task(summarise, session)
     return {"ok": True, "call_id": session.call_id}
 
@@ -165,8 +188,14 @@ def _require_elevenlabs_key(authorization: str) -> None:
 # "session_id={{session_id}}" and "conversation_id={{system__conversation_id}}". Dynamic
 # variables are interpolated into that prompt before it reaches us, which makes it the one
 # channel that works from the widget, the dashboard test console, and a phone call alike.
-_SESSION_MARKER = re.compile(r"\bsession_id[ \t]*[=:][ \t]*([A-Za-z0-9._:-]{8,})")
-_CONVERSATION_MARKER = re.compile(r"\bconversation_id[ \t]*[=:][ \t]*([A-Za-z0-9._:-]{8,})")
+# The value must not be the next marker's keyword: with whitespace collapsed,
+# "session_id= conversation_id=conv_x" would otherwise file every call under one session.
+_SESSION_MARKER = re.compile(
+    r"\bsession_id[ \t]*[=:][ \t]*(?!(?:session_id|conversation_id)\b)([A-Za-z0-9._:-]{8,})"
+)
+_CONVERSATION_MARKER = re.compile(
+    r"\bconversation_id[ \t]*[=:][ \t]*(?!(?:session_id|conversation_id)\b)([A-Za-z0-9._:-]{8,})"
+)
 
 
 def _usable(candidate) -> str | None:
@@ -224,9 +253,12 @@ def _message_text(message: dict) -> str:
 
 
 def _last_user_message(payload: dict) -> str:
-    for message in reversed(payload.get("messages", [])):
-        if message.get("role") == "user":
-            return _message_text(message)
+    """The caller's utterance for this turn — only if the transcript ends with one. A
+    request that ends with an assistant message (turn timeout, resend after a barge-in)
+    must not replay the previous utterance and re-run its tool calls."""
+    messages = payload.get("messages", [])
+    if messages and messages[-1].get("role") == "user":
+        return _message_text(messages[-1])
     return ""
 
 
@@ -288,6 +320,7 @@ def _stream_chunks(model: str, content: str):
 
 @app.post("/v1/chat/completions")
 def chat_completions(
+    background: BackgroundTasks,
     payload: dict = Body(...),
     x_session_id: str = Header(default="", alias="X-Session-Id"),
     authorization: str = Header(default=""),
@@ -304,22 +337,17 @@ def chat_completions(
         )
     # A session the widget already opened keeps its transport; a call that reaches us only
     # through the voice platform is a phone-style call.
-    session = store.get_or_create(session_id, transport="phone")
-    if session.call_id is None:
-        try:
-            session.call_id = domain.start_call(session)["id"]
-        except Exception:
-            log.warning("Could not open call record", exc_info=True)
-
-    prior = _prior_turns(payload)
-    if prior:
-        try:
-            seed_history(session, prior)
-        except Exception:
-            log.warning("Could not seed history from platform transcript", exc_info=True)
-
+    session = _resolve_session(session_id, "phone", background)
     user_text = _last_user_message(payload)
-    reply = run_turn(session, user_text)["reply"] if user_text.strip() else GREETING
+    with store.lock_for(session.id):
+        _ensure_call(session)
+        prior = _prior_turns(payload)
+        if prior:
+            try:
+                seed_history(session, prior)
+            except Exception:
+                log.warning("Could not seed history from platform transcript", exc_info=True)
+        reply = run_turn(session, user_text)["reply"] if user_text.strip() else GREETING
     model = payload.get("model") or settings.voice_model
 
     if payload.get("stream"):

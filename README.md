@@ -29,6 +29,7 @@ patient side, register any account and link it to a seeded record — for exampl
 
 ```bash
 python3 scripts/smoke_test.py      # 53 checks: business rules and access control
+(cd services/agent && uv run pytest)  # agent pipeline: sessions, voice adapter, tools, guards, graph — offline
 python3 evals/run_eval.py          # 28-case Golden Dataset against the live agent
 python3 scripts/talk.py            # talk to Maya in the terminal
 ```

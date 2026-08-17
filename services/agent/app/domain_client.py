@@ -20,10 +20,21 @@ class DomainError(Exception):
 
 def _request(method: str, path: str, session: CallSession | None = None, **kwargs) -> dict | list:
     headers = {"Authorization": f"Bearer {session.token()}"} if session else {}
-    with httpx.Client(base_url=settings.domain_service_url, timeout=TIMEOUT) as client:
-        response = client.request(method, path, headers=headers, **kwargs)
+    try:
+        with httpx.Client(base_url=settings.domain_service_url, timeout=TIMEOUT) as client:
+            response = client.request(method, path, headers=headers, **kwargs)
+    except httpx.HTTPError as e:
+        # A network failure is still an answer the tool layer must be able to phrase for
+        # the caller; letting it propagate collapses the whole turn.
+        raise DomainError(503, f"scheduling system unreachable ({type(e).__name__})") from e
     if response.status_code >= 400:
         detail = response.json().get("detail") if "json" in response.headers.get("content-type", "") else response.text
+        if isinstance(detail, list):  # pydantic validation errors: keep the human part
+            detail = "invalid input: " + "; ".join(
+                f"{'.'.join(str(x) for x in err.get('loc', [])[-1:])} {err.get('msg', '')}".strip()
+                for err in detail
+                if isinstance(err, dict)
+            )
         raise DomainError(response.status_code, str(detail))
     return response.json() if response.content else {}
 

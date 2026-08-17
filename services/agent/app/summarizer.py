@@ -38,14 +38,15 @@ def render_transcript(session: CallSession) -> str:
 
 def summarise(session: CallSession) -> dict | None:
     """Write the Call Summary. Returns None when there is nothing worth summarising."""
+    if session.call_id is None:
+        return None  # nothing was ever recorded for this session
     transcript = render_transcript(session)
-    if not transcript.strip():
-        return None
-
     try:
-        domain.end_call(session, transcript)
+        domain.end_call(session, transcript or None)
     except Exception:
         log.warning("Could not store transcript for call %s", session.call_id, exc_info=True)
+    if not transcript.strip():
+        return None  # closed, but nothing worth summarising
 
     llm = ChatOpenAI(
         model=settings.analysis_model,
@@ -63,6 +64,8 @@ def summarise(session: CallSession) -> dict | None:
     try:
         raw = llm.invoke(SUMMARY_PROMPT.format(transcript=transcript), config=config).content
         parsed = json.loads(str(raw).strip().removeprefix("```json").removeprefix("```").removesuffix("```"))
+        if not isinstance(parsed, dict):
+            raise ValueError(f"summary model returned {type(parsed).__name__}, not an object")
     except Exception:
         log.exception("Summary generation failed for call %s", session.call_id)
         return None

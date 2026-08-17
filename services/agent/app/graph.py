@@ -15,6 +15,7 @@ checkpoint keyed by the call session, not in whatever the voice platform sends u
 """
 import logging
 import os
+import threading
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -52,6 +53,9 @@ except Exception:
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     guard: str | None
+    # Snapshot of the CallSession facts (who this call has proven to be, its call record).
+    # Lives in the checkpoint so a restart mid-call keeps the identity along with the words.
+    identity: dict | None
 
 
 _reasoning_effort: str | None = settings.voice_reasoning_effort or None
@@ -72,12 +76,15 @@ def _build_llm() -> ChatOpenAI:
 # Constructed on first use, not at import: the client raises without an API key, and a
 # missing key should degrade conversations, not stop the service from booting.
 _llm: object | None = None
+_llm_lock = threading.Lock()
 
 
 def _get_llm():
     global _llm
     if _llm is None:
-        _llm = _build_llm()
+        with _llm_lock:
+            if _llm is None:
+                _llm = _build_llm()
     return _llm
 
 
@@ -160,12 +167,18 @@ def build_graph(checkpointer=None):
 
 
 _compiled = None
+_compile_lock = threading.Lock()
 
 
 def get_graph():
+    """The one compiled graph. Built under a lock: two first-turns racing here would
+    otherwise each compile their own graph with their own checkpointer, and the two
+    halves of one conversation would never see each other."""
     global _compiled
     if _compiled is None:
-        _compiled = build_graph(_make_checkpointer())
+        with _compile_lock:
+            if _compiled is None:
+                _compiled = build_graph(_make_checkpointer())
     return _compiled
 
 
@@ -215,6 +228,7 @@ def run_turn(session: CallSession, user_text: str) -> dict:
         )
     finally:
         reset_session(token)
+    persist_identity(session)
 
     messages = result["messages"]
     # Everything after the caller's turn belongs to this turn, not the checkpointed history.
@@ -243,6 +257,36 @@ def run_turn(session: CallSession, user_text: str) -> dict:
 def transcript_of(session: CallSession) -> list[BaseMessage]:
     state = get_graph().get_state({"configurable": {"thread_id": session.id}})
     return state.values.get("messages", []) if state else []
+
+
+def persist_identity(session: CallSession) -> None:
+    """Write the session's identity facts into its checkpoint when they change. A turn that
+    verifies the caller or opens the call record is the only kind that writes."""
+    config = {"configurable": {"thread_id": session.id}}
+    try:
+        current = get_graph().get_state(config)
+        stored = current.values.get("identity") if current else None
+        snapshot = session.snapshot()
+        if stored != snapshot:
+            get_graph().update_state(config, {"identity": snapshot}, as_node="output_guard")
+    except Exception:
+        log.warning("Could not persist identity for session %s", session.id, exc_info=True)
+
+
+def restore_identity(session: CallSession) -> bool:
+    """Rehydrate a session the store has forgotten (restart, second replica) from its
+    checkpoint. Returns True if there was anything to restore."""
+    try:
+        state = get_graph().get_state({"configurable": {"thread_id": session.id}})
+    except Exception:
+        log.warning("Could not read checkpoint for session %s", session.id, exc_info=True)
+        return False
+    snapshot = state.values.get("identity") if state else None
+    if not snapshot:
+        return False
+    session.restore(snapshot)
+    log.info("Restored session %s from its checkpoint (verified=%s)", session.id, session.is_verified)
+    return True
 
 
 def seed_history(session: CallSession, prior: list[BaseMessage]) -> bool:
