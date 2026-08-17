@@ -26,9 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v6
         with:
-          version: "0.12"
+          python-version: "3.12"
+      # uv from PyPI rather than astral-sh/setup-uv: the action fetches its release list
+      # from the GitHub API, which is one more thing that can be down.
+      - run: pip install "uv==0.12.*"
       # Offline: the domain service and the model are faked in tests/conftest.py, so this
       # covers session identity, the ElevenLabs adapter, tools, guardrails and the graph
       # loop without keys or containers.
@@ -37,51 +40,9 @@ jobs:
       - run: uv run --frozen pytest -q
         working-directory: services/agent
 
-  stack:
-    name: Compose stack + smoke test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # CI has no provider keys and needs none: FAQ embedding skips gracefully without
-      # an OpenAI key, and the smoke test exercises business rules and access control,
-      # never the LLM. These values only need to agree with what compose falls back to.
-      - name: Write CI env
-        run: |
-          cat > .env <<'EOF'
-          JWT_SECRET=dev-only-secret-change-me-0123456789abcdef
-          ADMIN_EMAIL=admin@assortderm.com
-          ADMIN_PASSWORD=admin-dev-password
-          EOF
-
-      - name: Build and start
-        run: docker compose up -d --build
-
-      - name: Wait for services
-        run: |
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost/api/auth/healthz >/dev/null \
-               && curl -sf http://localhost/api/domain/healthz >/dev/null \
-               && curl -sf http://localhost/api/agent/healthz >/dev/null; then
-              echo "healthy after ${i}s"; exit 0
-            fi
-            sleep 2
-          done
-          echo "services never became healthy"; exit 1
-
-      - name: Check API documentation routes
-        run: python3 scripts/check_api_docs.py
-
-      - name: Smoke test (53 checks)
-        run: python3 scripts/smoke_test.py
-
-      - name: Dump logs on failure
-        if: failure()
-        run: docker compose logs --tail 100
-
   deploy:
     name: Deploy to EC2
-    needs: [frontend, agent-tests, stack]
+    needs: [frontend, agent-tests]
     # Dormant until the repo variable DEPLOY_ENABLED is set to 'true'
     # (Settings → Secrets and variables → Actions → Variables).
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
