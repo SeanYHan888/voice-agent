@@ -227,6 +227,9 @@ def run_turn(session: CallSession, user_text: str) -> dict:
             "configurable": {"thread_id": session.id},
             "metadata": {
                 "langfuse_session_id": session.id,
+                # Group traces by patient in LangFuse once the caller has proven who they are.
+                # Only set when verified: an unset user is more honest than a placeholder.
+                **({"langfuse_user_id": f"patient:{session.patient_id}"} if session.is_verified else {}),
                 "call_id": session.call_id,
                 "verified": session.is_verified,
                 "transport": session.transport,

@@ -55,7 +55,11 @@ def summarise(session: CallSession) -> dict | None:
         max_retries=2,
     )
     config = {
-        "metadata": {"langfuse_session_id": session.id, "call_id": session.call_id},
+        "metadata": {
+            "langfuse_session_id": session.id,
+            **({"langfuse_user_id": f"patient:{session.patient_id}"} if session.is_verified else {}),
+            "call_id": session.call_id,
+        },
         "tags": ["maya", "post-call-summary"],
     }
     if _langfuse_handler is not None:
